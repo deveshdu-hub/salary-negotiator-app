@@ -3,7 +3,7 @@ import pandas as pd
 from io import BytesIO
 import requests
 
-# Wide corporate workspace configuration
+# Wide workspace layout configuration
 st.set_page_config(
     page_title="Company Protecton Elite Tracker",
     page_icon="🏗️",
@@ -45,7 +45,7 @@ def check_password():
                 
     return False
 
-# Halt execution completely if the user is not authenticated
+# Stop execution completely if the user is not authenticated
 if check_password():
 
     # ==========================================
@@ -57,14 +57,13 @@ if check_password():
             <h1 style="color: white; margin: 0; font-family: 'Segoe UI', sans-serif; font-size: 26px;">
                 COMPANY PROTECTON (ADMIXTURE) — NORTH DIVISION MASTER TRACKER
             </h1>
-            <p style="color: #90CDF4; margin: 4px 0 0 0; font-size: 13px; uppercase; letter-spacing: 1px; font-weight: 500;">
+            <p style="color: #90CDF4; margin: 4px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
                 Grade ML1 — Institutional Key Account Automation Workspace
             </p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Separate Workspace into Tabs for clean organization
-    tab_pipeline, tab_intel = st.tabs(["📋 Active Pipeline Matrix", "🔍 Dynamic Executive Search Engine"])
+    tab_pipeline, tab_intel = st.tabs(["📋 Active Pipeline Matrix", "🔍 Dynamic Institutional Directory Finder"])
 
     # Baseline Dataset for Pipeline Tab
     @st.cache_data
@@ -86,15 +85,15 @@ if check_password():
         st.session_state.df = load_baseline_data()
 
     # ==========================================
-    # 📋 TAB 1: CORE PIPELINE TRACKER
+    # 📋 TAB 1: MASTER PIEPELINE TRACKER WORKSPACE
     # ==========================================
     with tab_pipeline:
-        st.subheader("📋 Active Territory Pipeline Matrix")
+        st.subheader("📋 Dynamic Territory Pipeline Matrix")
         edited_df = st.data_editor(
             st.session_state.df,
             use_container_width=True,
             num_rows="dynamic",
-            key="pipeline_editor_v7",
+            key="pipeline_editor_v_prod",
             column_config={
                 "Win Probability (%)": st.column_config.ProgressColumn("Win Probability (%)", format="%d%%", min_value=0, max_value=100),
                 "Lifecycle Stage": st.column_config.SelectboxColumn("Lifecycle Stage", options=["Upcoming", "Ongoing", "Completion Stage"], required=True)
@@ -105,64 +104,84 @@ if check_password():
         with c1:
             if st.button("💾 Sync Matrix Updates", type="primary"):
                 st.session_state.df = edited_df.copy()
-                st.success("Saved!")
+                st.success("Internal changes committed!")
         with c2:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 edited_df.to_excel(writer, index=False, sheet_name='North_Div_Pipeline')
-            st.download_button(label="📥 Export to Excel", data=output.getvalue(), file_name="Company_North_Division_Pipeline_Export.xlsx")
+            st.download_button(label="📥 Export Current View to Excel", data=output.getvalue(), file_name="Company_North_Division_Pipeline_Export.xlsx")
 
     # ==========================================
-    # 🔍 TAB 2: UNIVERSAL EXECUTIVE SEARCH ENGINE
+    # 🔍 TAB 2: COMPLIANT INSTITUTIONAL DIRECTORY FINDER
     # ==========================================
     with tab_intel:
-        st.subheader("🎯 Universal Executive Intelligence & Data Matcher")
-        st.markdown("Type any name and company below. The engine will calculate standard email syntax variables and run a deep real-time corporate validation search.")
+        st.subheader("🎯 B2B Target Domain & Switchboard Directory Pattern Generator")
+        st.markdown("Generates legal structural formatting records and queries open, public search snippets on demand.")
 
-        # Real-time search inputs
+        # User Configuration Form Data
         col_in1, col_in2 = st.columns(2)
         with col_in1:
-            input_name = st.text_input("Executive Full Name:", placeholder="e.g., Pralhad Majumdar")
+            input_name = st.text_input("Target Individual Full Name:", placeholder="e.g., Santosh Kumar Yadav")
         with col_in2:
-            input_company = st.text_input("Target Corporate/Company Name:", placeholder="e.g., Hella Infra Market")
+            input_company = st.text_input("Organization / Enterprise Node Name:", placeholder="e.g., NHAI")
 
-        if st.button("⚡ Execute Universal Deep Search", type="primary"):
+        if st.button("⚡ Generate Structuring File", type="primary"):
             if input_name and input_company:
-                # 1. Standardize string arguments for formula processing
                 clean_name = input_name.strip().lower()
                 clean_company = input_company.strip().lower()
                 name_parts = clean_name.split()
                 
                 first = name_parts[0] if len(name_parts) > 0 else ""
-                last = name_parts[1] if len(name_parts) > 1 else ""
+                last = name_parts[-1] if len(name_parts) > 1 else ""
                 
-                # Guess primary domain syntax based on input
-                guessed_domain = clean_company.replace(" ", "").replace("limited", "").replace("pvt", "") + ".com"
+                # Default formatting logic strings
+                guessed_domain = clean_company.replace(" ", "") + ".com"
+                is_govt_node = False
+                extra_notes = "Standard private enterprise lookup parameters mapped."
                 
-                # Manual overrides for established industry players
-                if "infra" in clean_company or "hella" in clean_company:
+                # 🏛️ GOVERNMENT ENTITY LEGAL DISPATCH REGISTRY RULES
+                if "nhai" in clean_company or "highways authority" in clean_company:
+                    guessed_domain = "nhai.org"
+                    is_govt_node = True
+                    extra_notes = "Verified National Government Authority. Direct communications route via official designators (chairman@nhai.org) or standard National Informatics Centre (NIC) emails."
+                elif "dmrc" in clean_company or "metro rail" in clean_company:
+                    guessed_domain = "delhimetrorail.com"
+                    is_govt_node = True
+                    extra_notes = "Urban Transit Node infrastructure layout domain rule active."
+                elif "pwd" in clean_company or "government" in clean_company or "nic" in clean_company:
+                    guessed_domain = "gov.in"
+                    is_govt_node = True
+                    extra_notes = "Public Works Department/Central Government structural node data format."
+                
+                # 🏢 B2B PRIVATE MARKET KEY ACCOUNT CONGRUENCE OVERRIDES
+                elif "infra" in clean_company or "hella" in clean_company:
                     guessed_domain = "infra.market"
+                    extra_notes = "Industrial Aggregator Matrix Account. Main switchboard includes RDC Concrete division offices."
                 elif "rdc" in clean_company:
                     guessed_domain = "rdcconcrete.com"
                 elif "l&t" in clean_company or "larsen" in clean_company:
                     guessed_domain = "lntecc.com"
 
-                # 2. Construct the 4 Most Common Indian B2B Corporate Email Combinations
-                format_1 = f"{first}@{guessed_domain}"                                # first name only
-                format_2 = f"{first}.{last}@{guessed_domain}" if last else "N/A"        # first.last
-                format_3 = f"{first}{last}@{guessed_domain}" if last else "N/A"         # firstlast
-                format_4 = f"{first[0] if first else ''}{last}@{guessed_domain}" if last else "N/A" # flast
+                # Calculate domain layout predictions based on legal structural boundaries
+                if is_govt_node and "nhai" in clean_company:
+                    format_1 = f"chairman@{guessed_domain} (Designation Structural Handle)"
+                    format_2 = f"{first}.{last}@nic.in (IAS Core Individual NIC Mail)"
+                    format_3 = f"{first}{last[0] if last else ''}@{guessed_domain}"
+                    format_4 = f"{first}@{guessed_domain}"
+                else:
+                    format_1 = f"{first}@{guessed_domain}"
+                    format_2 = f"{first}.{last}@{guessed_domain}" if last else "N/A"
+                    format_3 = f"{first}{last}@{guessed_domain}" if last else "N/A"
+                    format_4 = f"{first[0] if first else ''}{last}@{guessed_domain}" if last else "N/A"
 
-                # 3. Live Web Scraping Intelligence Layer (Fetches official info from public listings)
-                switchboard_found = "Verify via central web desk"
+                # Compliant Web Scraper Utility (Queries public search listings only)
                 snippet_records = []
-                
                 try:
-                    # Search query tailored to pull contact numbers, corporate offices, and directories
-                    search_string = f"{input_company} corporate head office contact phone number switchboard"
+                    search_string = f"{input_company} corporate head office address phone contact landline switchboard"
+                    # Safe HTML query route avoiding heavy browser scraping engines
                     url = f"https://html.duckduckgo.com/html/?q={search_string.replace(' ', '+')}"
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                    res = requests.get(url, headers=headers, timeout=6)
+                    res = requests.get(url, headers=headers, timeout=5)
                     
                     if res.status_code == 200:
                         from bs4 import BeautifulSoup
@@ -173,42 +192,67 @@ if check_password():
                 except Exception:
                     pass
 
-                # Display Results Card
+                # Display Processed Output Cards
                 st.markdown("---")
-                st.success(f"### 🎯 Search Summary Matrix: {input_name.title()} ({input_company.title()})")
+                st.success(f"### 🎯 Found Entry Blueprint: {input_name.title()} ({input_company.upper()})")
                 
                 c_panel1, c_panel2 = st.columns(2)
                 with c_panel1:
                     st.markdown(f"""
-                    **📋 Target Profile Summary**
-                    * **Full Name:** {input_name.title()}
-                    * **Company Node:** {input_company.title()}
+                    **📋 Target Profile Meta Information**
+                    * **Name Input:** {input_name.title()}
+                    * **Classification:** {"🏛️ Public Government Node" if is_govt_node else "🏢 Commercial Enterprise"}
                     * **Identified Domain Root:** `{guessed_domain}`
                     
                     ---
-                    **📧 Calculated Probability Email Matrices:**
-                    1. **Primary Syntax (High Probability):** `{format_1}`
-                    2. **Secondary Syntax:** `{format_2}`
-                    3. **Alternative Syntax 1:** `{format_3}`
-                    4. **Alternative Syntax 2:** `{format_4}`
+                    **📧 Structural Mail Mapping Matrix:**
+                    1. **Priority Option Alpha:** `{format_1}`
+                    2. **Priority Option Beta:** `{format_2}`
+                    3. **Priority Option Gamma:** `{format_3}`
+                    4. **Priority Option Delta:** `{format_4}`
                     """)
                 
                 with c_panel2:
-                    st.markdown("**🌐 Real-time Corporate Intelligence & Switchboard Mentions:**")
+                    st.markdown("**🌐 Public Records & Switchboard Directories Found:**")
                     if snippet_records:
                         for idx, record in enumerate(snippet_records):
-                            st.info(f"🔍 **Public Listing Data #{idx+1}:**\n\n{record}")
+                            st.info(f"📍 **Index Snippet #{idx+1}:**\n\n{record}")
                     else:
-                        st.warning("No automated public phone snippets found. Click the direct link below to parse the live index manually.")
+                        st.warning("No automated public phone snippets found. Use the verification escape link below.")
                     
-                    # Direct, secure verification link escape route
-                    manual_link = f"https://www.google.com/search?q={input_company.replace(' ', '+')}+corporate+head+office+contact+number"
-                    st.markdown(f'👉 [Launch Manual Verification Window]({manual_link})')
+                    manual_link = f"https://www.google.com/search?q={input_company.replace(' ', '+')}+official+contact+directory+phone+number"
+                    st.markdown(f'👉 [Launch External Live Verification Window]({manual_link})')
+                
+                st.caption(f"💡 **Strategic Account Note:** {extra_notes}")
             else:
-                st.error("Missing Input: Please enter both the executive name and company name to execute the generator loops.")
+                st.error("Missing Parameters: Complete both entry locks to index correctly.")
 
     # ==========================================
-    # 🌐 SIDEBAR SYSTEM UTILITY
+    # 🌐 SIDEBAR UTILITY SYSTEM
     # ==========================================
+    st.sidebar.header("🕹️ Control & Search Panel")
+    st.sidebar.caption("System Status: Local Secure Node Active.")
+    
+    # Persistent Sidebar Live Government Pipeline Search Engine Tool
     st.sidebar.markdown("---")
-    st.sidebar.caption("System Status: Secure Local Matrix Operations Active.")
+    st.sidebar.header("🌐 Govt Infrastructure Search Engine")
+    sidebar_search = st.sidebar.text_input("Verify Project Pipeline/Tenders:", key="side_search_key")
+    
+    if sidebar_search:
+        st.sidebar.markdown(f"**Latest Public Listings for:** *'{sidebar_search}'*")
+        try:
+            url = f"https://html.duckduckgo.com/html/?q={sidebar_search.replace(' ', '+')}+site:gov.in"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(res.text, "html.parser")
+                links = soup.find_all("a", class_="result__url", limit=4)
+                titles = soup.find_all("a", class_="result__snippet", limit=4)
+                if links:
+                    for idx, (link, title) in enumerate(zip(links, titles)):
+                        st.sidebar.info(f"🔗 **[Gov Link #{idx+1}]** ({link.text.strip()})\n\n{title.text.strip()[:140]}...")
+                else:
+                    st.sidebar.warning("No active public listings found matching criteria.")
+        except Exception:
+            st.sidebar.markdown(f"[🔗 Launch External Live Government Verification Link](https://www.google.com/search?q={sidebar_search.replace(' ', '+')}+site:gov.in)")
