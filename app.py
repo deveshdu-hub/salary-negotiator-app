@@ -1,24 +1,23 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-import traceback
+import requests
 
 # ==========================================
 # ⚙️ SECURE INTERFACE & LAYOUT CONFIGURATION
 # ==========================================
 st.set_page_config(
     page_title="Self Assist Core",
-    page_icon="💼",
+    page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS injector for complete mobile responsiveness and styling UI
+# Custom CSS for complete mobile responsiveness and visual sizing overrides
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
     div[data-testid="stMetricValue"] > div { font-size: 24px !important; font-weight: bold; }
-    .report-card { background-color: #f8fafc; border-left: 5px solid #0284c7; padding: 15px; border-radius: 4px; margin-bottom: 10px; }
     @media (max-width: 640px) {
         .responsive-title { font-size: 18px !important; }
         div[data-testid="stMetricValue"] > div { font-size: 18px !important; }
@@ -27,12 +26,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 🔑 SECURITY ACCESS CONTROL LAYER
+# 🔑 SECURITY & LOGIN ACCESS CONTROL LAYER
 # ==========================================
-def authenticate_user():
-    """Validates session login criteria to prevent unauthorized backend node access."""
-    VALID_USER = "admin123"
-    VALID_PASS = "CompanyNorth2026"
+def check_password():
+    """Returns True if the user enters the correct User ID and Password."""
+    VALID_USERNAME = "admin123"
+    VALID_PASSWORD = "CompanyNorth2026"
 
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -41,162 +40,234 @@ def authenticate_user():
         return True
 
     st.markdown("""
-        <div style="max-width: 500px; margin: 40px auto; padding: 25px; background-color: #F8FAFC; border-radius: 8px; border-top: 4px solid #0284c7; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-            <h2 style="color: #0f172a; margin-top:0; font-family:sans-serif; text-align:center;">Self Assist Secure Portal</h2>
-            <p style="color: #64748b; font-size:13px; text-align:center;">Venture Node Authorization Required — Level ML1 Compliance Gate.</p>
+        <div style="max-width: 450px; margin: 50px auto; padding: 30px; background-color: #F7FAFC; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #1A365D;">
+            <h2 style="color: #1A365D; margin-top: 0; font-family: 'Segoe UI', sans-serif; text-align: center;">Secure Gateway Access</h2>
+            <p style="color: #718096; font-size: 13px; text-align: center;">Enter North Division corporate credentials to initialize workspace.</p>
         </div>
     """, unsafe_allow_html=True)
     
-    _, col_center, _ = st.columns([1, 2, 1])
-    with col_center:
-        user_in = st.text_input("Venture Node User ID", key="ca_uid")
-        pass_in = st.text_input("Security Access Key", type="password", key="ca_pwd")
-        if st.button("Unlock Compliance Workspace", type="primary", use_container_width=True):
-            if user_in == VALID_USER and pass_in == VALID_PASS:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        username = st.text_input("User ID / Login", key="input_user")
+        password = st.text_input("Password", type="password", key="input_pass")
+        
+        if st.button("Verify & Authenticate Entry", type="primary", use_container_width=True):
+            if username == VALID_USERNAME and password == VALID_PASSWORD:
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error("Access Revoked: Invalid Gateway Key Credentials.")
+                st.error("Authentication Failed: Invalid User ID or Password Verification Key.")
+                
     return False
 
-# Execute App Block only if security handshake passes
-if authenticate_user():
-
-    # Persistent Global Session State Setup for Tracker Core
-    if "ca_pipeline" not in st.session_state:
-        st.session_state.ca_pipeline = pd.DataFrame([
-            {"Client ID": "SA-01", "Client Name": "FutureHQ Node A", "Entity Type": "Proprietorship", "Service Stream": "ITR & Tax Audit", "FY 2025-26 Turnover (₹)": 1800000, "Estimated Tax Liability (₹)": 45000, "Filing Deadline": "2026-07-31", "Workflow Status": "Document Verification"},
-            {"Client ID": "SA-02", "Client Name": "CarryMe Logistics", "Entity Type": "LLP / Startup", "Service Stream": "GST Reconciliation", "FY 2025-26 Turnover (₹)": 4200000, "Estimated Tax Liability (₹)": 756000, "Filing Deadline": "2026-06-25", "Workflow Status": "Pending Upload"}
-        ])
+# Halt down execution completely if the user is not authenticated
+if check_password():
 
     # ==========================================
-    # 🏗️ HEADER ZONE INTERFACE
+    # 🏗️ MAIN DASHBOARD APPS INTERFACE (SECURED)
     # ==========================================
     st.markdown("""
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 20px; border-radius: 6px; margin-bottom: 20px; border-bottom: 3px solid #0284c7;">
-            <span style="float: right; background-color: #0369a1; color: white; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: bold;">📊 INTERNAL WORKSPACE v2026</span>
-            <h1 class="responsive-title" style="color: white; margin: 0; font-family: sans-serif; font-size: 24px;">SELF ASSIST — DIGITAL OFFICE PIPELINE & PROJECTIONS ENGINE</h1>
-            <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Corporate Venture Structural Assessment Node</p>
+        <div style="background: linear-gradient(135deg, #1A365D 0%, #2A4365 50%, #1A202C 100%); padding: 22px; border-radius: 8px; margin-bottom: 25px; border-bottom: 4px solid #3182ce;">
+            <div style="float: right;"><span style="background-color: #48BB78; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold;">🔐 SECURE NODE ACTIVE</span></div>
+            <h1 class="responsive-title" style="color: white; margin: 0; font-family: 'Segoe UI', sans-serif; font-size: 26px;">
+                COMPANY PROTECTON (ADMIXTURE) — NORTH DIVISION MASTER TRACKER
+            </h1>
+            <p style="color: #90CDF4; margin: 4px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
+                Grade ML1 — Institutional Key Account Automation Workspace
+            </p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Tabs Router Configuration
-    tab_dashboard, tab_calculator, tab_ministry = st.tabs([
-        "📋 Client Management Matrix", 
-        "🧮 AI Tax Structuring Engine", 
-        "🏛️ Investor Ministry Growth Metrics"
-    ])
+    # Separate Workspace into Tabs for clean organization
+    tab_pipeline, tab_intel = st.tabs(["📋 Active Pipeline Matrix", "🔍 B2B Contact Format Generator"])
+
+    # Baseline Dataset for Pipeline Tab
+    @st.cache_data
+    def load_baseline_data():
+        columns = [
+            "Project ID", "State / Hub", "Client Category", "Project Name", "Lifecycle Stage",
+            "Primary EPC Contractor", "Key Decision Maker", "Structural Consultant",
+            "QC / Plant Lead", "Incumbent Competitor", "Target Application Zone",
+            "Company Counterweapon", "Latest Action Update", "Next Concrete Action Required",
+            "Target Date", "Win Probability (%)"
+        ]
+        data = [
+            ["PRJ-01", "Delhi-NCR", "Metro Rail", "Delhi Metro Phase IV (Golden Line)", "Upcoming", "L&T Construction", "Arjun Mehta (Procurement Head)", "DMRC Design Board", "S. Sharma (QC Manager)", "Sika India", "Underground Cut-&-Cover Tunnels", "ProHyperplast SP & HS ProCrystal 100", "Bidding stage active. Structural drawing pulled.", "Schedule technical meeting with DMRC Consultant for spec-in", "2026-07-15", 65],
+            ["PRJ-02", "Uttar Pradesh", "NHAI / Expressways", "Ganga Expressway (Phase 2 Pours)", "Ongoing", "PNC Infratech", "V. K. Singh (Project Director)", "L N Malviya Infra", "R. Chaudhary (Plant QC)", "Fosroc India", "Mass road beds & bridge decks", "ProSuperplast RT", "Trial mix requested due to slump loss complaints in summer heat.", "Deliver product samples to site batching yard for initial trial mix", "2026-06-25", 80],
+            ["PRJ-03", "Delhi-NCR", "Mega Private Projects", "DLF Cybercity Phase 2 Expansion", "Upcoming", "Tata Projects", "Rajesh Kapoor (VP Infrastructure)", "Mantec Consultants", "Amit Pal (Site In-charge)", "MC-Bauchemie", "Deep basement rafts & structural foundation piles", "Hs ProCrystal 100 & HS ProCem CI", "Architectural blueprint finalized. Sub-surface parameters mapped.", "Pitch crystalline integration benefits directly to Mantec Lead", "2026-07-20", 50]
+        ]
+        return pd.DataFrame(data, columns=columns)
+
+    if "df" not in st.session_state:
+        st.session_state.df = load_baseline_data()
 
     # ==========================================
-    # 📋 TAB 1: CLIENT MANAGEMENT WORKSPACE
+    # 📋 TAB 1: CORE PIPELINE TRACKER
     # ==========================================
-    with tab_dashboard:
-        st.subheader("📋 Active Compliance Portfolio Management")
-        
-        try:
-            # Main Client Data Grid
-            edited_ca_df = st.data_editor(
-                st.session_state.ca_pipeline,
-                use_container_width=True,
-                num_rows="dynamic",
-                key="ca_grid_v1_2026",
-                column_config={
-                    "Entity Type": st.column_config.SelectboxColumn("Entity Type", options=["Proprietorship", "LLP / Startup", "Private Limited", "Freelancer"]),
-                    "Service Stream": st.column_config.SelectboxColumn("Service Stream", options=["ITR & Tax Audit", "GST Reconciliation", "ROC Comp Filings", "CMA Report Drafting"]),
-                    "Workflow Status": st.column_config.SelectboxColumn("Workflow Status", options=["Document Verification", "Pending Upload", "CA Review Pending", "Filing Complete"])
-                }
-            )
-            
-            col_act1, col_act2 = st.columns([1, 4])
-            with col_act1:
-                if st.button("💾 Sync Matrix", type="primary", use_container_width=True):
-                    st.session_state.ca_pipeline = edited_ca_df.copy()
-                    st.success("Changes Saved.")
-            with col_act2:
-                buffer_out = BytesIO()
-                with pd.ExcelWriter(buffer_out, engine='openpyxl') as writer:
-                    edited_ca_df.to_excel(writer, index=False, sheet_name='Self_Assist_Data')
-                st.download_button(
-                    label="📥 Export Compliance Book to Excel (.xlsx)",
-                    data=buffer_out.getvalue(),
-                    file_name="Self_Assist_Pipeline.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-        except Exception as err:
-            st.error(f"Engine Error: {str(err)}")
+    with tab_pipeline:
+        st.subheader("🔄 Weekly Government Excel Synchronization Hub")
+        uploaded_file = st.file_uploader("Drop newly received or edited client sheets here:", type=["xlsx", "xls"])
 
-    # ==========================================
-    # 🧮 TAB 2: AI TAX STRUCTURING ENGINE
-    # ==========================================
-    with tab_calculator:
-        st.subheader("🧮 Smart Tax Structuring Model")
-        
-        col_calc1, col_calc2 = st.columns([1, 1])
-        
-        with col_calc1:
-            gross_revenue = st.number_input("Est. Gross Turnover (₹):", min_value=0, value=2400000, step=50000)
-            declared_expenses = st.number_input("Operational Deductions (₹):", min_value=0, value=800000, step=25000)
-            opt_presv = st.checkbox("Section 44AD Presumptive Rule (6%)")
-            
-        with col_calc2:
+        if uploaded_file is not None:
             try:
-                if opt_presv:
-                    net_taxable_income = gross_revenue * 0.06
-                    calc_note = "Section 44AD (Digital) threshold applied."
+                incoming_df = pd.read_excel(uploaded_file)
+                if "Project ID" in incoming_df.columns:
+                    if st.button("⚡ Execute Deep Sync & Merge Records"):
+                        st.session_state.df.set_index("Project ID", inplace=True, drop=False)
+                        incoming_df.set_index("Project ID", inplace=True, drop=False)
+                        for idx in incoming_df.index:
+                            st.session_state.df.loc[idx] = incoming_df.loc[idx]
+                        st.session_state.df.reset_index(drop=True, inplace=True)
+                        st.success("Sync complete!")
                 else:
-                    net_taxable_income = max(0, gross_revenue - declared_expenses)
-                    calc_note = "Standard Accounting framework active."
+                    st.error("Invalid File Format: Missing 'Project ID' column.")
+            except Exception as e:
+                st.error(f"Sync Interrupted: {str(e)}")
 
-                tax_estimate = 0.0
-                if net_taxable_income > 700000:
-                    tax_estimate = (net_taxable_income - 700000) * 0.10 + 15000
+        # Filter Panel Sidebars safely checked
+        available_options = st.session_state.df["State / Hub"].unique()
+        filter_state = st.sidebar.multiselect("Select State / Hub:", options=available_options, default=available_options)
+        filtered_df = st.session_state.df[st.session_state.df["State / Hub"].isin(filter_state)]
+
+        st.subheader("📋 Active Territory Pipeline Matrix")
+        edited_df = st.data_editor(
+            filtered_df,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="pipeline_editor_v6",
+            column_config={
+                "Win Probability (%)": st.column_config.ProgressColumn("Win Probability (%)", format="%d%%", min_value=0, max_value=100),
+                "Lifecycle Stage": st.column_config.SelectboxColumn("Lifecycle Stage", options=["Upcoming", "Ongoing", "Completion Stage"], required=True)
+            }
+        )
+
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            if st.button("💾 Sync Matrix Updates", type="primary"):
+                st.session_state.df.set_index("Project ID", inplace=True, drop=False)
+                for _, row in edited_df.iterrows():
+                    idx = row["Project ID"]
+                    st.session_state.df.loc[idx] = row
+                st.session_state.df.reset_index(drop=True, inplace=True)
+                st.success("Saved!")
+
+        with c2:
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                edited_df.to_excel(writer, index=False, sheet_name='North_Div_Pipeline')
+            st.download_button(label="📥 Export Current View to Excel", data=output.getvalue(), file_name="Company_North_Division_Pipeline_Export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # ==========================================
+    # 🔍 TAB 2: B2B CONTACT FORMAT GENERATOR
+    # ==========================================
+    with tab_intel:
+        st.subheader("🎯 Executive Contact Finder & Domain Matcher")
+        st.markdown("Type in an executive's name and company to generate their corporate email format and official switchboard routes.")
+
+        col_in1, col_in2 = st.columns(2)
+        with col_in1:
+            input_name = st.text_input("Enter Target Executive Name:", placeholder="e.g., Souvik Sengupta")
+        with col_in2:
+            input_company = st.text_input("Enter Company Name:", placeholder="e.g., Infra Market")
+
+        if st.button("🔍 Generate Corporate Contact Profile", type="primary"):
+            if input_name and input_company:
+                clean_name = input_name.strip().lower()
+                clean_company = input_company.strip().lower()
+                name_parts = clean_name.split()
+                first = name_parts[0] if len(name_parts) > 0 else ""
+                last = name_parts[1] if len(name_parts) > 1 else ""
+
+                email_domain = "company.com"
+                email_format = "[first_name].[last_name]@company.com"
+                predicted_email = "Not Computed"
+                switchboard = "Not Found"
+                extra_notes = "Standard corporate pattern applied."
+
+                if "infra" in clean_company or "hella" in clean_company:
+                    email_domain = "infra.market"
+                    email_format = "[first_name]@infra.market"
+                    predicted_email = f"{first}@{email_domain}"
+                    switchboard = "+91 22 6844 5555 / +91 84509 95099"
+                    extra_notes = "Major infrastructure aggregator. Operates alongside RDC Concrete division (+91 22 6716 5100)."
                 
-                st.metric(label="Calculated Net Taxable Income", value=f"₹{net_taxable_income:,.0f}")
-                st.metric(label="Approx Base Tax Liability", value=f"₹{tax_estimate:,.0f}")
+                elif "rdc" in clean_company or "concrete" in clean_company:
+                    email_domain = "rdcconcrete.com"
+                    email_format = "[first_name].[last_name]@rdcconcrete.com"
+                    predicted_email = f"{first}.{last}@{email_domain}" if last else f"{first}@{email_domain}"
+                    switchboard = "+91 22 6716 5100"
+                    extra_notes = "Sub-entity of Infra Market house of brands."
                 
-                st.markdown(f"""
-                    <div class="report-card">
-                        <strong>📌 Self Assist Model Note:</strong><br>
-                        {calc_note}<br><br>
-                        <em>Provisional data. Finalize results with your designated CA before ITR transmission.</em>
+                elif "l&t" in clean_company or "larsen" in clean_company:
+                    email_domain = "lntecc.com"
+                    email_format = "[first_name][last_name]@lntecc.com"
+                    predicted_email = f"{first}{last}@{email_domain}"
+                    switchboard = "+91 44 2252 6000"
+                    extra_notes = "Primary tier-1 infrastructure contractor company configuration."
+                
+                elif "sika" in clean_company:
+                    email_domain = "in.sika.com"
+                    email_format = "[last_name].[first_name]@in.sika.com"
+                    predicted_email = f"{last}.{first}@{email_domain}" if last else f"{first}@{email_domain}"
+                    switchboard = "+91 22 6230 7700"
+                    extra_notes = "Admixture sector incumbent competitor routing blueprint."
+                
+                else:
+                    domain_guess = clean_company.replace(" ", "") + ".com"
+                    email_domain = domain_guess
+                    email_format = "[first_name].[last_name]@" + domain_guess
+                    predicted_email = f"{first}.{last}@{domain_guess}" if last else f"{first}@{domain_guess}"
+                    switchboard = "Verify via central website contact tab."
+                    extra_notes = "Standard generic global commercial domain architecture applied."
+
+                st.markdown("---")
+                st.success(f"### 🎯 Found Format Match for {input_company.upper()}")
+                
+                c_out1, c_out2 = st.columns(2)
+                with c_out1:
+                    st.markdown(f"""
+                    <div style="background-color: #f0fdf4; padding: 15px; border-radius: 5px; border-left: 4px solid #16a34a;">
+                        <strong>📁 Target Executive:</strong> {input_name.title()}<br>
+                        <strong>🏢 Company:</strong> {input_company.title()}<br><br>
+                        <strong>🌐 Corporate Domain:</strong> <code>{email_domain}</code><br>
+                        <strong>⚙️ Standard Format:</strong> <code>{email_format}</code>
                     </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
                 
-            except Exception as calc_err:
-                st.error(f"Calculation Error: {str(calc_err)}")
+                with c_out2:
+                    st.markdown(f"""
+                    <div style="background-color: #f8fafc; padding: 15px; border-radius: 5px; border-left: 4px solid #475569;">
+                        <strong>📧 Estimated Email Address:</strong> <code>{predicted_email}</code><br><br>
+                        <strong>📞 Official Switchboard Line:</strong> {switchboard}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.caption(f"💡 **Strategic Intelligence Note:** {extra_notes}")
+            else:
+                st.error("Missing Input Parameters: Please fill in both fields.")
 
     # ==========================================
-    # 🏛️ TAB 3: INVESTOR MINISTRY GROWTH CONSOLE
+    # 🌐 SIDEBAR PUBLIC SEARCH UTILITY
     # ==========================================
-    with tab_ministry:
-        st.subheader("🏛️ Multi-Venture Execution Panel (Goal: ₹1L/Month)")
-        
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            st.metric(label="CarryMe Meesho Vol", value="1 Active Order", delta="+₹50 Gigs")
-        with col_m2:
-            st.metric(label="FutureHQ Traffic", value="4,000 Views", delta="2 Reels")
-        with col_m3:
-            st.metric(label="Self Assist Registries", value=f"{len(st.session_state.ca_pipeline)} Clients", delta="Pipeline Active")
-            
-        st.markdown("---")
-        st.markdown("### 🕒 Standardized 24-Hour Operations Matrix")
-        
-        ops_schedule = pd.DataFrame([
-            {"Time Windows": "06:00 - 09:00", "Core Focus": "🧠 DEEP ASSET CREATION", "Work Package": "Code features and refine structures in FutureHQ/Self Assist."},
-            {"Time Windows": "09:00 - 10:00", "Core Focus": "🥪 LOGISTICS", "Work Package": "Pack, prepare labels, and dispatch active Meesho orders."},
-            {"Time Windows": "10:00 - 13:00", "Core Focus": "📈 VALUE SCALE", "Work Package": "Upload 3-5 new catalog asset variations onto Meesho dashboard."},
-            {"Time Windows": "14:00 - 17:00", "Core Focus": "🎯 TRAFFIC FUNNEL", "Work Package": "Update digital bio-links; script short-form reels for CarryMe/FutureHQ."},
-            {"Time Windows": "17:00 - 19:00", "Core Focus": "🤝 OUTREACH", "Work Package": "Pitches setting pricing floors above ₹1,500 - ₹3,000."}
-        ])
-        st.table(ops_schedule)
+    st.sidebar.markdown("---")
+    st.sidebar.header("🌐 Govt Infrastructure Search Engine")
+    search_query = st.sidebar.text_input("Type Client/Project:")
 
-    # ==========================================
-    # 🌐 CONTROL PANEL SIDEBAR CORE
-    # ==========================================
-    st.sidebar.header("🕹️ System Terminal")
-    st.sidebar.info("Operational Status: Secure Connection.")
-    
-    if st.sidebar.button("🔐 Logout Node"):
-        st.session_state.authenticated = False
-        st.rerun()
+    if search_query:
+        st.sidebar.markdown(f"**Latest Public Listings for:** *'{search_query}'*")
+        try:
+            url = f"https://html.duckduckgo.com/html/?q={search_query.replace(' ', '+')}+site:gov.in"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(res.text, "html.parser")
+                links = soup.find_all("a", class_="result__url", limit=4)
+                titles = soup.find_all("a", class_="result__snippet", limit=4)
+                if links:
+                    for idx, (link, title) in enumerate(zip(links, titles)):
+                        st.sidebar.info(f"🔗 **[Gov Link #{idx+1}]** ({link.text.strip()})\n\n{title.text.strip()[:140]}...")
+                else:
+                    st.sidebar.warning("No active public listings found matching criteria.")
+        except Exception:
+            st.sidebar.markdown(f"[🔗 Launch External Live Government Verification Link](https://www.google.com/search?q={search_query.replace(' ', '+')}+site:gov.in)")
