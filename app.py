@@ -1,29 +1,3 @@
-import streamlit as st
-import pandas as pd
-from io import BytesIO
-import requests
-
-# ==========================================
-# ⚙️ SECURE INTERFACE & LAYOUT CONFIGURATION
-# ==========================================
-st.set_page_config(
-    page_title="Self Assist Core",
-    page_icon="🏗️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for complete mobile responsiveness and visual sizing overrides
-st.markdown("""
-    <style>
-    .main .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-    div[data-testid="stMetricValue"] > div { font-size: 24px !important; font-weight: bold; }
-    @media (max-width: 640px) {
-        .responsive-title { font-size: 18px !important; }
-        div[data-testid="stMetricValue"] > div { font-size: 18px !important; }
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 # ==========================================
 # 🔑 SECURITY & LOGIN ACCESS CONTROL LAYER
