@@ -83,7 +83,9 @@ def init_session_state():
             ["PRJ-02", "Uttar Pradesh", "NHAI / Expressways", "Ganga Expressway (Phase 2 Pours)", "Ongoing", "PNC Infratech", "V. K. Singh (Project Director)", "L N Malviya Infra", "R. Chaudhary (Plant QC)", "Fosroc India", "Mass road beds & bridge decks", "ProSuperplast RT", "Trial mix requested due to slump loss complaints.", "Deliver product samples to site batching yard", "2026-06-25", 80],
             ["PRJ-03", "Delhi-NCR", "Mega Private Projects", "DLF Cybercity Phase 2 Expansion", "Upcoming", "Tata Projects", "Rajesh Kapoor (VP Infrastructure)", "Mantec Consultants", "Amit Pal (Site In-charge)", "MC-Bauchemie", "Deep basement rafts & structural piles", "HS ProCrystal 100 & HS ProCem CI", "Blueprint finalized. Sub-surface mapped.", "Pitch crystalline integration to Mantec Lead", "2026-07-20", 50]
         ]
-        st.session_state.df = pd.DataFrame(data, columns=columns)
+        df = pd.DataFrame(data, columns=columns)
+        df = convert_pipeline_dtypes(df)
+        st.session_state.df = df
 
     # CA / client portfolio
     if "ca_pipeline" not in st.session_state:
@@ -92,9 +94,24 @@ def init_session_state():
             {"Client ID": "SA-02", "Client Name": "CarryMe Logistics", "Entity Type": "LLP / Startup", "Service Stream": "GST Reconciliation", "FY 2025-26 Turnover (₹)": 4200000, "Estimated Tax Liability (₹)": 756000, "Filing Deadline": "2026-06-25", "Workflow Status": "Pending Upload"}
         ])
 
-    # Daily report log (optional)
+    # Daily report log
     if "daily_logs" not in st.session_state:
         st.session_state.daily_logs = []
+
+def convert_pipeline_dtypes(df):
+    """Ensure correct dtypes for pipeline DataFrame"""
+    df = df.copy()
+    # Convert Target Date to date (not datetime)
+    if "Target Date" in df.columns:
+        df["Target Date"] = pd.to_datetime(df["Target Date"], errors="coerce").dt.date
+    # Convert Win Probability to int, clamp 0-100, fill NaN with 0
+    if "Win Probability (%)" in df.columns:
+        df["Win Probability (%)"] = pd.to_numeric(df["Win Probability (%)"], errors="coerce").fillna(0).clip(0, 100).astype(int)
+    # Ensure Lifecycle Stage only has allowed values
+    allowed_stages = ["Upcoming", "Ongoing", "Completion Stage"]
+    if "Lifecycle Stage" in df.columns:
+        df["Lifecycle Stage"] = df["Lifecycle Stage"].apply(lambda x: x if x in allowed_stages else "Upcoming")
+    return df
 
 # ==========================================
 # 🏙️ MAIN APP (only if authenticated)
@@ -131,15 +148,16 @@ if check_password():
                 incoming_df = pd.read_excel(uploaded_file)
                 if "Project ID" in incoming_df.columns:
                     if st.button("⚡ Execute Deep Sync & Merge Records"):
-                        # Merge: update existing rows, add new rows
+                        # Convert incoming dtypes
+                        incoming_df = convert_pipeline_dtypes(incoming_df)
+                        # Merge using Project ID as index
                         st.session_state.df = st.session_state.df.set_index("Project ID")
                         incoming_df = incoming_df.set_index("Project ID")
-                        # Update existing
                         st.session_state.df.update(incoming_df)
-                        # Append new rows
                         new_rows = incoming_df[~incoming_df.index.isin(st.session_state.df.index)]
                         st.session_state.df = pd.concat([st.session_state.df, new_rows])
                         st.session_state.df.reset_index(inplace=True)
+                        st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
                         st.success("✅ Sync complete! Pipeline updated.")
                 else:
                     st.error("❌ Invalid format: Missing 'Project ID' column.")
@@ -149,21 +167,46 @@ if check_password():
         # Sidebar filter (State/Hub)
         available_states = st.session_state.df["State / Hub"].unique()
         selected_states = st.sidebar.multiselect("🔍 Filter by State / Hub", options=available_states, default=available_states)
-        filtered_df = st.session_state.df[st.session_state.df["State / Hub"].isin(selected_states)]
+        filtered_df = st.session_state.df[st.session_state.df["State / Hub"].isin(selected_states)].copy()
+        filtered_df = convert_pipeline_dtypes(filtered_df)  # ensure dtypes again
 
         st.subheader("📋 Active Territory Pipeline Matrix")
-        edited_df = st.data_editor(
-            filtered_df,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="pipeline_editor",
-            column_config={
-                "Win Probability (%)": st.column_config.ProgressColumn("Win Probability (%)", format="%d%%", min_value=0, max_value=100),
-                "Lifecycle Stage": st.column_config.SelectboxColumn("Lifecycle Stage", options=["Upcoming", "Ongoing", "Completion Stage"], required=True),
-                "Target Date": st.column_config.DateColumn("Target Date")
-            }
-        )
 
+        # Column configuration with safe types
+        column_config = {
+            "Win Probability (%)": st.column_config.ProgressColumn(
+                "Win Probability (%)",
+                format="%d%%",
+                min_value=0,
+                max_value=100
+            ),
+            "Lifecycle Stage": st.column_config.SelectboxColumn(
+                "Lifecycle Stage",
+                options=["Upcoming", "Ongoing", "Completion Stage"],
+                required=True
+            ),
+            "Target Date": st.column_config.DateColumn("Target Date", format="YYYY-MM-DD")
+        }
+
+        # Try to render the data editor with column config
+        try:
+            edited_df = st.data_editor(
+                filtered_df,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="pipeline_editor",
+                column_config=column_config
+            )
+        except Exception as editor_err:
+            st.warning(f"⚠️ Custom editor failed: {editor_err}. Falling back to basic editor.")
+            edited_df = st.data_editor(
+                filtered_df,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="pipeline_editor_fallback"
+            )
+
+        # Save and Export buttons
         col_save, col_export = st.columns([1, 4])
         with col_save:
             if st.button("💾 Sync Matrix Updates", type="primary"):
@@ -172,10 +215,10 @@ if check_password():
                     st.session_state.df = st.session_state.df.set_index("Project ID")
                     edited_df = edited_df.set_index("Project ID")
                     st.session_state.df.update(edited_df)
-                    # Add newly created rows (rows that are in edited_df but not in session_state)
                     new_rows = edited_df[~edited_df.index.isin(st.session_state.df.index)]
                     st.session_state.df = pd.concat([st.session_state.df, new_rows])
                     st.session_state.df.reset_index(inplace=True)
+                    st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
                     st.success("✅ Pipeline saved successfully!")
                 except Exception as e:
                     st.error(f"⚠️ Save error: {str(e)}")
@@ -213,14 +256,12 @@ if check_password():
                     first = name_parts[0] if name_parts else ""
                     last = name_parts[1] if len(name_parts) > 1 else ""
 
-                    # Default fallback
                     domain = "company.com"
                     email_format = "[first].[last]@company.com"
                     predicted_email = "Not available"
                     switchboard = "Check website contact"
                     notes = "Standard global pattern."
 
-                    # Rule-based matching
                     if "infra" in company or "hella" in company:
                         domain = "infra.market"
                         email_format = "[first]@infra.market"
@@ -252,7 +293,6 @@ if check_password():
                         predicted_email = f"{first}.{last}@{domain_clean}" if last else f"{first}@{domain_clean}"
                         notes = "Best‑guess domain based on company name."
 
-                    # Display results
                     st.markdown("---")
                     st.success(f"### 🎯 Format match for **{input_company.upper()}**")
                     col_a, col_b = st.columns(2)
@@ -323,7 +363,6 @@ if check_password():
                 taxable_income = max(0, gross_revenue - declared_expenses)
                 note = "Standard book‑accounting method (actual profit)."
 
-            # Simplified tax calculation (example slab)
             if taxable_income <= 700000:
                 tax = 0
             else:
@@ -390,7 +429,6 @@ if check_password():
             """
             st.success("✅ Report ready – copy below for daily audit (19:00)")
             st.code(report_text, language="text")
-            # Optionally store log
             st.session_state.daily_logs.append({"date": report_date, "report": report_text})
 
     # ==========================================
@@ -426,4 +464,4 @@ if check_password():
 
     # Footer
     st.markdown("---")
-    st.caption("⚡ Self Assist Core v2.0 | Berger (Admixture) · CarryMe · FutureHQ | Streamlit Cloud Ready")
+    st.caption("⚡ Self Assist Core v2.1 | Berger (Admixture) · CarryMe · FutureHQ | Streamlit Cloud Ready")
