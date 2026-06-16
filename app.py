@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+from io import BytesIO, StringIO
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -101,20 +101,47 @@ def init_session_state():
 def convert_pipeline_dtypes(df):
     """Ensure correct dtypes for pipeline DataFrame"""
     df = df.copy()
-    # Convert Target Date to date (not datetime)
     if "Target Date" in df.columns:
         df["Target Date"] = pd.to_datetime(df["Target Date"], errors="coerce").dt.date
-    # Convert Win Probability to int, clamp 0-100, fill NaN with 0
     if "Win Probability (%)" in df.columns:
         df["Win Probability (%)"] = pd.to_numeric(df["Win Probability (%)"], errors="coerce").fillna(0).clip(0, 100).astype(int)
-    # Ensure Lifecycle Stage only has allowed values
     allowed_stages = ["Upcoming", "Ongoing", "Completion Stage"]
     if "Lifecycle Stage" in df.columns:
         df["Lifecycle Stage"] = df["Lifecycle Stage"].apply(lambda x: x if x in allowed_stages else "Upcoming")
     return df
 
 # ==========================================
-# 🏙️ MAIN APP (only if authenticated)
+# ✨ AUTO POLISH CONDUCTOR (RULE-BASED)
+# ==========================================
+def auto_polish_text(raw_text: str) -> str:
+    """Improves raw operational notes into professional business language."""
+    if not raw_text.strip():
+        return "No input provided."
+    
+    text = raw_text.strip()
+    # Common replacements
+    replacements = {
+        r"\b(late|delayed|slow)\b": "delayed",
+        r"\b(issue|problem|glitch)\b": "bottleneck",
+        r"\b(fix|solve|resolve)\b": "remediate",
+        r"\b(tomorrow|next day)\b": "next working day",
+        r"\b(urgent|asap)\b": "critical priority",
+        r"\b(need|require|must have)\b": "required",
+        r"\b(think|maybe|perhaps)\b": "proposed",
+        r"\b(good|fine|okay)\b": "satisfactory",
+        r"\b(bad|terrible|awful)\b": "suboptimal",
+    }
+    for pattern, repl in replacements.items():
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    
+    # Capitalize first letter of each sentence
+    text = re.sub(r'(^|\.\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+    if not text.endswith(('.', '!', '?')):
+        text += '.'
+    return text
+
+# ==========================================
+# 🏙️ MAIN APP
 # ==========================================
 if check_password():
     init_session_state()
@@ -137,20 +164,17 @@ if check_password():
     ])
 
     # ==========================================
-    # TAB 1 – PIPELINE MATRIX WITH EXCEL SYNC
+    # TAB 1 – PIPELINE MATRIX (unchanged)
     # ==========================================
     with tab_pipeline:
         st.subheader("🔄 Weekly Government Excel Synchronization Hub")
         uploaded_file = st.file_uploader("Drop newly received/edited client sheets (.xlsx, .xls):", type=["xlsx", "xls"])
-
         if uploaded_file is not None:
             try:
                 incoming_df = pd.read_excel(uploaded_file)
                 if "Project ID" in incoming_df.columns:
                     if st.button("⚡ Execute Deep Sync & Merge Records"):
-                        # Convert incoming dtypes
                         incoming_df = convert_pipeline_dtypes(incoming_df)
-                        # Merge using Project ID as index
                         st.session_state.df = st.session_state.df.set_index("Project ID")
                         incoming_df = incoming_df.set_index("Project ID")
                         st.session_state.df.update(incoming_df)
@@ -158,60 +182,32 @@ if check_password():
                         st.session_state.df = pd.concat([st.session_state.df, new_rows])
                         st.session_state.df.reset_index(inplace=True)
                         st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
-                        st.success("✅ Sync complete! Pipeline updated.")
+                        st.success("✅ Sync complete!")
                 else:
-                    st.error("❌ Invalid format: Missing 'Project ID' column.")
+                    st.error("❌ Missing 'Project ID' column.")
             except Exception as e:
                 st.error(f"🚨 Sync failed: {str(e)}")
 
-        # Sidebar filter (State/Hub)
         available_states = st.session_state.df["State / Hub"].unique()
         selected_states = st.sidebar.multiselect("🔍 Filter by State / Hub", options=available_states, default=available_states)
         filtered_df = st.session_state.df[st.session_state.df["State / Hub"].isin(selected_states)].copy()
-        filtered_df = convert_pipeline_dtypes(filtered_df)  # ensure dtypes again
+        filtered_df = convert_pipeline_dtypes(filtered_df)
 
         st.subheader("📋 Active Territory Pipeline Matrix")
-
-        # Column configuration with safe types
         column_config = {
-            "Win Probability (%)": st.column_config.ProgressColumn(
-                "Win Probability (%)",
-                format="%d%%",
-                min_value=0,
-                max_value=100
-            ),
-            "Lifecycle Stage": st.column_config.SelectboxColumn(
-                "Lifecycle Stage",
-                options=["Upcoming", "Ongoing", "Completion Stage"],
-                required=True
-            ),
+            "Win Probability (%)": st.column_config.ProgressColumn("Win Probability (%)", format="%d%%", min_value=0, max_value=100),
+            "Lifecycle Stage": st.column_config.SelectboxColumn("Lifecycle Stage", options=["Upcoming", "Ongoing", "Completion Stage"], required=True),
             "Target Date": st.column_config.DateColumn("Target Date", format="YYYY-MM-DD")
         }
-
-        # Try to render the data editor with column config
         try:
-            edited_df = st.data_editor(
-                filtered_df,
-                use_container_width=True,
-                num_rows="dynamic",
-                key="pipeline_editor",
-                column_config=column_config
-            )
-        except Exception as editor_err:
-            st.warning(f"⚠️ Custom editor failed: {editor_err}. Falling back to basic editor.")
-            edited_df = st.data_editor(
-                filtered_df,
-                use_container_width=True,
-                num_rows="dynamic",
-                key="pipeline_editor_fallback"
-            )
+            edited_df = st.data_editor(filtered_df, use_container_width=True, num_rows="dynamic", key="pipeline_editor", column_config=column_config)
+        except Exception:
+            edited_df = st.data_editor(filtered_df, use_container_width=True, num_rows="dynamic", key="pipeline_editor_fallback")
 
-        # Save and Export buttons
         col_save, col_export = st.columns([1, 4])
         with col_save:
             if st.button("💾 Sync Matrix Updates", type="primary"):
                 try:
-                    # Save edits back to session state
                     st.session_state.df = st.session_state.df.set_index("Project ID")
                     edited_df = edited_df.set_index("Project ID")
                     st.session_state.df.update(edited_df)
@@ -219,23 +215,17 @@ if check_password():
                     st.session_state.df = pd.concat([st.session_state.df, new_rows])
                     st.session_state.df.reset_index(inplace=True)
                     st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
-                    st.success("✅ Pipeline saved successfully!")
+                    st.success("✅ Pipeline saved!")
                 except Exception as e:
                     st.error(f"⚠️ Save error: {str(e)}")
-
         with col_export:
             output = BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 edited_df.reset_index().to_excel(writer, index=False, sheet_name="North_Div_Pipeline")
-            st.download_button(
-                label="📥 Export Current View to Excel",
-                data=output.getvalue(),
-                file_name=f"Pipeline_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            st.download_button("📥 Export Current View to Excel", data=output.getvalue(), file_name=f"Pipeline_Export_{datetime.now().strftime('%Y%m%d')}.xlsx")
 
     # ==========================================
-    # TAB 2 – B2B CONTACT FORMAT GENERATOR
+    # TAB 2 – B2B CONTACT GENERATOR (unchanged)
     # ==========================================
     with tab_intel:
         st.subheader("🎯 Executive Contact Finder & Domain Matcher")
@@ -244,7 +234,6 @@ if check_password():
             input_name = st.text_input("Target Executive Name:", placeholder="e.g., Souvik Sengupta")
         with col_company:
             input_company = st.text_input("Company Name:", placeholder="e.g., Infra Market")
-
         if st.button("🔍 Generate Corporate Contact Profile", type="primary"):
             if not input_name or not input_company:
                 st.error("❌ Please fill both fields.")
@@ -252,72 +241,56 @@ if check_password():
                 try:
                     name = input_name.strip().lower()
                     company = input_company.strip().lower()
-                    name_parts = name.split()
-                    first = name_parts[0] if name_parts else ""
-                    last = name_parts[1] if len(name_parts) > 1 else ""
-
+                    parts = name.split()
+                    first = parts[0] if parts else ""
+                    last = parts[1] if len(parts) > 1 else ""
                     domain = "company.com"
-                    email_format = "[first].[last]@company.com"
-                    predicted_email = "Not available"
-                    switchboard = "Check website contact"
+                    fmt = "[first].[last]@company.com"
+                    email = "Not available"
+                    switch = "Check website"
                     notes = "Standard global pattern."
-
                     if "infra" in company or "hella" in company:
                         domain = "infra.market"
-                        email_format = "[first]@infra.market"
-                        predicted_email = f"{first}@{domain}"
-                        switchboard = "+91 22 6844 5555"
-                        notes = "Infrastructure aggregator (Infra.Market / RDC Concrete)"
+                        fmt = "[first]@infra.market"
+                        email = f"{first}@{domain}"
+                        switch = "+91 22 6844 5555"
+                        notes = "Infrastructure aggregator"
                     elif "rdc" in company or "concrete" in company:
                         domain = "rdcconcrete.com"
-                        email_format = "[first].[last]@rdcconcrete.com"
-                        predicted_email = f"{first}.{last}@{domain}" if last else f"{first}@{domain}"
-                        switchboard = "+91 22 6716 5100"
-                        notes = "RDC Concrete – part of Infra.Market group"
+                        fmt = "[first].[last]@rdcconcrete.com"
+                        email = f"{first}.{last}@{domain}" if last else f"{first}@{domain}"
+                        switch = "+91 22 6716 5100"
+                        notes = "RDC Concrete"
                     elif "l&t" in company or "larsen" in company:
                         domain = "lntecc.com"
-                        email_format = "[first][last]@lntecc.com"
-                        predicted_email = f"{first}{last}@{domain}"
-                        switchboard = "+91 44 2252 6000"
-                        notes = "Larsen & Toubro – primary EPC contractor"
+                        fmt = "[first][last]@lntecc.com"
+                        email = f"{first}{last}@{domain}"
+                        switch = "+91 44 2252 6000"
+                        notes = "L&T – primary EPC"
                     elif "sika" in company:
                         domain = "in.sika.com"
-                        email_format = "[last].[first]@in.sika.com"
-                        predicted_email = f"{last}.{first}@{domain}" if last else f"{first}@{domain}"
-                        switchboard = "+91 22 6230 7700"
-                        notes = "Sika India – competitor intelligence"
+                        fmt = "[last].[first]@in.sika.com"
+                        email = f"{last}.{first}@{domain}" if last else f"{first}@{domain}"
+                        switch = "+91 22 6230 7700"
+                        notes = "Sika India"
                     else:
-                        domain_clean = re.sub(r'[^a-z0-9]', '', company) + ".com"
-                        domain = domain_clean
-                        email_format = f"[first].[last]@{domain_clean}"
-                        predicted_email = f"{first}.{last}@{domain_clean}" if last else f"{first}@{domain_clean}"
-                        notes = "Best‑guess domain based on company name."
-
+                        clean = re.sub(r'[^a-z0-9]', '', company) + ".com"
+                        domain = clean
+                        fmt = f"[first].[last]@{clean}"
+                        email = f"{first}.{last}@{clean}" if last else f"{first}@{clean}"
+                        notes = "Best‑guess domain"
                     st.markdown("---")
                     st.success(f"### 🎯 Format match for **{input_company.upper()}**")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        st.markdown(f"""
-                        <div style="background:#f0fdf4; padding:15px; border-radius:10px; border-left:4px solid #16a34a;">
-                            <strong>📁 Executive:</strong> {input_name.title()}<br>
-                            <strong>🏢 Company:</strong> {input_company.title()}<br>
-                            <strong>🌐 Domain:</strong> <code>{domain}</code><br>
-                            <strong>⚙️ Format:</strong> <code>{email_format}</code>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#f0fdf4; padding:15px; border-radius:10px; border-left:4px solid #16a34a;'><strong>📁 Executive:</strong> {input_name.title()}<br><strong>🏢 Company:</strong> {input_company.title()}<br><strong>🌐 Domain:</strong> <code>{domain}</code><br><strong>⚙️ Format:</strong> <code>{fmt}</code></div>", unsafe_allow_html=True)
                     with col_b:
-                        st.markdown(f"""
-                        <div style="background:#f8fafc; padding:15px; border-radius:10px; border-left:4px solid #475569;">
-                            <strong>📧 Estimated Email:</strong> <code>{predicted_email}</code><br>
-                            <strong>📞 Switchboard:</strong> {switchboard}<br>
-                            <em style="font-size:12px;">{notes}</em>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#f8fafc; padding:15px; border-radius:10px; border-left:4px solid #475569;'><strong>📧 Estimated Email:</strong> <code>{email}</code><br><strong>📞 Switchboard:</strong> {switch}<br><em style='font-size:12px;'>{notes}</em></div>", unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Contact generator error: {str(e)}")
 
     # ==========================================
-    # TAB 3 – TAX STRUCTURING ENGINE
+    # TAB 3 – TAX ENGINE (unchanged)
     # ==========================================
     with tab_calculator:
         st.subheader("📋 Active Self Assist Portfolio & Tax Structuring Model")
@@ -342,7 +315,7 @@ if check_password():
                 buffer = BytesIO()
                 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                     edited_ca.to_excel(writer, index=False, sheet_name="Self_Assist_Portfolio")
-                st.download_button("📥 Export Portfolio Book", data=buffer.getvalue(), file_name="Self_Assist_Portfolio.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button("📥 Export Portfolio Book", data=buffer.getvalue(), file_name="Self_Assist_Portfolio.xlsx")
         except Exception as e:
             st.error(f"⚠️ Portfolio editor error: {str(e)}")
 
@@ -353,7 +326,6 @@ if check_password():
             gross_revenue = st.number_input("📊 Est. Gross Turnover (₹)", min_value=0, value=2400000, step=50000)
         with col_exp:
             declared_expenses = st.number_input("📉 Operational Deductions (₹)", min_value=0, value=800000, step=25000)
-
         opt_presumptive = st.checkbox("✅ Section 44AD Presumptive Tax (6% deemed profit)")
         try:
             if opt_presumptive:
@@ -361,13 +333,8 @@ if check_password():
                 note = "Presumptive taxation under 44AD applied (6% of turnover)."
             else:
                 taxable_income = max(0, gross_revenue - declared_expenses)
-                note = "Standard book‑accounting method (actual profit)."
-
-            if taxable_income <= 700000:
-                tax = 0
-            else:
-                tax = (taxable_income - 700000) * 0.10 + 15000
-
+                note = "Standard book‑accounting method."
+            tax = 0 if taxable_income <= 700000 else (taxable_income - 700000) * 0.10 + 15000
             st.metric("💸 Net Taxable Profit", f"₹{taxable_income:,.0f}")
             st.metric("🧾 Approx Base Tax Liability", f"₹{tax:,.0f}")
             st.info(f"📌 {note}\n\n*Provisional calculation – always consult your CA.*")
@@ -375,7 +342,7 @@ if check_password():
             st.error(f"Tax calculation error: {str(calc_err)}")
 
     # ==========================================
-    # TAB 4 – INVESTOR MINISTRY CONSOLE
+    # TAB 4 – INVESTOR MINISTRY CONSOLE (enhanced with Auto Polish)
     # ==========================================
     with tab_ministry:
         st.subheader("🏛️ Multi‑Venture Execution Tracker (Goal: ₹1,00,000/month)")
@@ -407,10 +374,11 @@ if check_password():
             cm_catalogs = st.number_input("New Catalog Uploads (CarryMe)", min_value=0, step=1)
             cm_orders = st.number_input("New Orders Received", min_value=0, step=1)
             revenue = st.number_input("Total Revenue Locked (₹)", min_value=0, step=50)
-            bottleneck = st.text_area("Core Operational Bottleneck Today")
+            raw_bottleneck = st.text_area("Core Operational Bottleneck Today")
             submitted = st.form_submit_button("📊 Compile Ministry Report")
 
         if submitted:
+            polished_bottleneck = auto_polish_text(raw_bottleneck)
             report_text = f"""
 ### 📊 MINISTRY DAILY RESULTS – {report_date.strftime('%d-%m-%Y')}
 #### 1. ASSET ENGINE (FutureHQ)
@@ -424,15 +392,28 @@ if check_password():
 #### 3. MONETIZATION
 - Revenue Locked-in Today : ₹{revenue}
 
-#### 4. AUTOCORRECT CHECK
-- Bottleneck : {bottleneck if bottleneck.strip() else "None logged."}
+#### 4. AUTOCORRECT CHECK (Auto‑Polished)
+- Raw input: {raw_bottleneck if raw_bottleneck.strip() else "None"}
+- Polished: {polished_bottleneck}
             """
-            st.success("✅ Report ready – copy below for daily audit (19:00)")
+            st.success("✅ Report ready with auto‑polished bottleneck – copy below for daily audit (19:00)")
             st.code(report_text, language="text")
             st.session_state.daily_logs.append({"date": report_date, "report": report_text})
 
+        # ✨ Standalone Auto Polish Conductor tool
+        st.markdown("---")
+        st.subheader("✨ Auto Polish Conductor (Standalone)")
+        raw_note = st.text_area("Paste any raw operational note (e.g., 'late delivery, need fix tomorrow')", height=100)
+        if st.button("Polish Note with AI Rules"):
+            if raw_note.strip():
+                polished = auto_polish_text(raw_note)
+                st.success("**Polished version:**")
+                st.code(polished, language="text")
+            else:
+                st.warning("Please enter some text to polish.")
+
     # ==========================================
-    # SIDEBAR – GOV INFRASTRUCTURE SEARCH
+    # SIDEBAR – GOV SEARCH + CODE SHARING
     # ==========================================
     st.sidebar.markdown("---")
     st.sidebar.header("🌐 Govt Infrastructure Search Engine")
@@ -457,6 +438,25 @@ if check_password():
         except Exception:
             st.sidebar.markdown(f"[🔍 Fallback: Search Google for `{search_term} site:gov.in`](https://www.google.com/search?q={search_term.replace(' ', '+')}+site:gov.in)")
 
+    # 📦 FULL CODE-SHARING FEATURE (in sidebar)
+    st.sidebar.markdown("---")
+    st.sidebar.header("📦 Full Code‑Sharing")
+    if st.sidebar.button("📥 Download app.py Source Code"):
+        # Read the current script file
+        try:
+            with open(__file__, "r", encoding="utf-8") as f:
+                source_code = f.read()
+            st.sidebar.download_button(
+                label="⬇️ Click to Save app.py",
+                data=source_code,
+                file_name="self_assist_core_app.py",
+                mime="text/x-python",
+                use_container_width=True
+            )
+            st.sidebar.success("Ready to download!")
+        except Exception as e:
+            st.sidebar.error(f"Could not read source: {e}")
+
     # Logout button
     if st.sidebar.button("🔐 Logout Node", use_container_width=True):
         st.session_state.authenticated = False
@@ -464,4 +464,4 @@ if check_password():
 
     # Footer
     st.markdown("---")
-    st.caption("⚡ Self Assist Core v2.1 | Berger (Admixture) · CarryMe · FutureHQ | Streamlit Cloud Ready")
+    st.caption("⚡ Self Assist Core v3.0 | Auto Polish Conductor + Code Sharing | Berger · CarryMe · FutureHQ")
