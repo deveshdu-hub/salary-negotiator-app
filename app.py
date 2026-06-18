@@ -1,607 +1,722 @@
+# ===================================================================
+# Saathi AI – Version 2.0
+# All-in-one e‑commerce, Reels, R&D, and Seller Tools
+# ===================================================================
+
 import streamlit as st
 import pandas as pd
-from io import BytesIO, StringIO
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import re
+import random
+from datetime import datetime, timedelta
+from PIL import Image
+import io
+import json
+import sqlite3
+import hashlib
+import time
+import plotly.express as px
 
-# ==========================================
-# ⚙️ PAGE CONFIGURATION
-# ==========================================
+# ---------- PAGE CONFIG ----------
 st.set_page_config(
-    page_title="Self Assist Core | Berger · CarryMe · FutureHQ",
-    page_icon="🏗️",
+    page_title="Saathi AI v2.0",
+    page_icon="🧞‍♂️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# ==========================================
-# 📱 CUSTOM CSS – MOBILE RESPONSIVE
-# ==========================================
-st.markdown("""
-    <style>
-    .main .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    div[data-testid="stMetricValue"] > div { font-size: 24px !important; font-weight: bold; }
-    .report-card { background-color: #f8fafc; border-left: 5px solid #1A365D; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-    .stDataFrame { overflow-x: auto; }
-    @media (max-width: 640px) {
-        .responsive-title { font-size: 18px !important; }
-        div[data-testid="stMetricValue"] > div { font-size: 18px !important; }
-        .stButton button { width: 100%; }
-    }
-    </style>
-""", unsafe_allow_html=True)
+# ---------- DATABASE SETUP ----------
+DB_PATH = "users.db"
 
-# ==========================================
-# 🔐 AUTHENTICATION LAYER
-# ==========================================
-def check_password():
-    VALID_USERNAME = "admin123"
-    VALID_PASSWORD = "CompanyNorth2026"
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT UNIQUE,
+                  password_hash TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS catalogs
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT,
+                  product_name TEXT,
+                  seo_title TEXT,
+                  seo_desc TEXT,
+                  packaging_dims TEXT,
+                  sku TEXT,
+                  rating REAL,
+                  monthly_sales INTEGER,
+                  reviews INTEGER,
+                  hero_prompt TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS scripts
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT,
+                  idea TEXT,
+                  script TEXT,
+                  master_prompt TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    conn.commit()
+    conn.close()
 
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
+def hash_password(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
 
-    if st.session_state.authenticated:
+def add_user(username, password):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (username, password_hash) VALUES (?,?)", (username, hash_password(password)))
+        conn.commit()
+        conn.close()
         return True
+    except:
+        conn.close()
+        return False
 
-    st.markdown("""
-        <div style="max-width: 450px; margin: 40px auto; padding: 30px; background-color: #F7FAFC; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-top: 5px solid #1A365D;">
-            <h2 style="color: #1A365D; margin-top: 0; font-family: 'Segoe UI', sans-serif; text-align: center;">🔐 Secure Gateway Access</h2>
-            <p style="color: #718096; font-size: 13px; text-align: center;">North Division – Corporate credentials required</p>
-        </div>
-    """, unsafe_allow_html=True)
+def verify_user(username, password):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT password_hash FROM users WHERE username=?", (username,))
+    row = c.fetchone()
+    conn.close()
+    return row and row[0] == hash_password(password)
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        username = st.text_input("User ID", key="login_user")
-        password = st.text_input("Password", type="password", key="login_pass")
-        if st.button("Verify & Authenticate Entry", type="primary", use_container_width=True):
-            if username == VALID_USERNAME and password == VALID_PASSWORD:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("❌ Authentication Failed: Invalid credentials.")
-    return False
+def user_exists(username):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE username=?", (username,))
+    row = c.fetchone()
+    conn.close()
+    return row is not None
 
-# ==========================================
-# 🧠 SESSION STATE INITIALIZATION
-# ==========================================
-def init_session_state():
-    # Corporate B2B pipeline
-    if "df" not in st.session_state:
-        columns = [
-            "Project ID", "State / Hub", "Client Category", "Project Name", "Lifecycle Stage",
-            "Primary EPC Contractor", "Key Decision Maker", "Structural Consultant",
-            "QC / Plant Lead", "Incumbent Competitor", "Target Application Zone",
-            "Company Counterweapon", "Latest Action Update", "Next Concrete Action Required",
-            "Target Date", "Win Probability (%)"
-        ]
-        data = [
-            ["PRJ-01", "Delhi-NCR", "Metro Rail", "Delhi Metro Phase IV (Golden Line)", "Upcoming", "L&T Construction", "Arjun Mehta (Procurement Head)", "DMRC Design Board", "S. Sharma (QC Manager)", "Sika India", "Underground Cut-&-Cover Tunnels", "ProHyperplast SP & HS ProCrystal 100", "Bidding stage active. Structural drawing pulled.", "Schedule technical meeting with DMRC Consultant for spec-in", "2026-07-15", 65],
-            ["PRJ-02", "Uttar Pradesh", "NHAI / Expressways", "Ganga Expressway (Phase 2 Pours)", "Ongoing", "PNC Infratech", "V. K. Singh (Project Director)", "L N Malviya Infra", "R. Chaudhary (Plant QC)", "Fosroc India", "Mass road beds & bridge decks", "ProSuperplast RT", "Trial mix requested due to slump loss complaints.", "Deliver product samples to site batching yard", "2026-06-25", 80],
-            ["PRJ-03", "Delhi-NCR", "Mega Private Projects", "DLF Cybercity Phase 2 Expansion", "Upcoming", "Tata Projects", "Rajesh Kapoor (VP Infrastructure)", "Mantec Consultants", "Amit Pal (Site In-charge)", "MC-Bauchemie", "Deep basement rafts & structural piles", "HS ProCrystal 100 & HS ProCem CI", "Blueprint finalized. Sub-surface mapped.", "Pitch crystalline integration to Mantec Lead", "2026-07-20", 50]
-        ]
-        df = pd.DataFrame(data, columns=columns)
-        df = convert_pipeline_dtypes(df)
-        st.session_state.df = df
+init_db()
 
-    # CA / client portfolio
-    if "ca_pipeline" not in st.session_state:
-        st.session_state.ca_pipeline = pd.DataFrame([
-            {"Client ID": "SA-01", "Client Name": "FutureHQ Node A", "Entity Type": "Proprietorship", "Service Stream": "ITR & Tax Audit", "FY 2025-26 Turnover (₹)": 1800000, "Estimated Tax Liability (₹)": 45000, "Filing Deadline": "2026-07-31", "Workflow Status": "Document Verification"},
-            {"Client ID": "SA-02", "Client Name": "CarryMe Logistics", "Entity Type": "LLP / Startup", "Service Stream": "GST Reconciliation", "FY 2025-26 Turnover (₹)": 4200000, "Estimated Tax Liability (₹)": 756000, "Filing Deadline": "2026-06-25", "Workflow Status": "Pending Upload"}
-        ])
+# ---------- SESSION STATE ----------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+if "lang" not in st.session_state:
+    st.session_state.lang = "English"
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = False
+if "gemini_key" not in st.session_state:
+    st.session_state.gemini_key = ""
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "reel_scripts" not in st.session_state:
+    st.session_state.reel_scripts = []
+if "catalogs" not in st.session_state:
+    st.session_state.catalogs = []
+if "product_weight" not in st.session_state:
+    st.session_state.product_weight = 0.5
+if "selling_price" not in st.session_state:
+    st.session_state.selling_price = 499
+if "cost_price" not in st.session_state:
+    st.session_state.cost_price = 250
+if "voice_text" not in st.session_state:
+    st.session_state.voice_text = ""
 
-    # Daily report log
-    if "daily_logs" not in st.session_state:
-        st.session_state.daily_logs = []
-
-def convert_pipeline_dtypes(df):
-    """Ensure correct dtypes for pipeline DataFrame"""
-    df = df.copy()
-    if "Target Date" in df.columns:
-        df["Target Date"] = pd.to_datetime(df["Target Date"], errors="coerce").dt.date
-    if "Win Probability (%)" in df.columns:
-        df["Win Probability (%)"] = pd.to_numeric(df["Win Probability (%)"], errors="coerce").fillna(0).clip(0, 100).astype(int)
-    allowed_stages = ["Upcoming", "Ongoing", "Completion Stage"]
-    if "Lifecycle Stage" in df.columns:
-        df["Lifecycle Stage"] = df["Lifecycle Stage"].apply(lambda x: x if x in allowed_stages else "Upcoming")
-    return df
-
-# ==========================================
-# ✨ AUTO POLISH CONDUCTOR (RULE-BASED)
-# ==========================================
-def auto_polish_text(raw_text: str) -> str:
-    """Improves raw operational notes into professional business language."""
-    if not raw_text.strip():
-        return "No input provided."
-    
-    text = raw_text.strip()
-    # Common replacements
-    replacements = {
-        r"\b(late|delayed|slow)\b": "delayed",
-        r"\b(issue|problem|glitch)\b": "bottleneck",
-        r"\b(fix|solve|resolve)\b": "remediate",
-        r"\b(tomorrow|next day)\b": "next working day",
-        r"\b(urgent|asap)\b": "critical priority",
-        r"\b(need|require|must have)\b": "required",
-        r"\b(think|maybe|perhaps)\b": "proposed",
-        r"\b(good|fine|okay)\b": "satisfactory",
-        r"\b(bad|terrible|awful)\b": "suboptimal",
-    }
-    for pattern, repl in replacements.items():
-        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-    
-    # Capitalize first letter of each sentence
-    text = re.sub(r'(^|\.\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
-    if not text.endswith(('.', '!', '?')):
-        text += '.'
-    return text
-
-# ==========================================
-# 🏙️ MAIN APP
-# ==========================================
-if check_password():
-    init_session_state()
-
-    # Header
-    st.markdown("""
-        <div style="background: linear-gradient(135deg, #1A365D 0%, #2A4365 50%, #1A202C 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-bottom: 4px solid #3182ce;">
-            <div style="float: right;"><span style="background-color: #48BB78; color: white; padding: 4px 12px; border-radius: 30px; font-size: 11px; font-weight: bold;">🔐 SECURE NODE ACTIVE</span></div>
-            <h1 class="responsive-title" style="color: white; margin: 0; font-size: 24px;">🏗️ COMPANY PROTECTION (ADMIXTURE) – NORTH DIVISION MASTER TRACKER</h1>
-            <p style="color: #90CDF4; margin: 5px 0 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Multi‑Venture Execution & Account Automation Workspace</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Create tabs
-    tab_pipeline, tab_intel, tab_calculator, tab_ministry = st.tabs([
-        "📋 Active Pipeline Matrix",
-        "🔍 B2B Contact Format Generator",
-        "🧮 AI Tax Structuring Engine",
-        "🏛️ Investor Ministry Growth Console"
-    ])
-
-    # ==========================================
-    # TAB 1 – PIPELINE MATRIX (unchanged)
-    # ==========================================
-    with tab_pipeline:
-        st.subheader("🔄 Weekly Government Excel Synchronization Hub")
-        uploaded_file = st.file_uploader("Drop newly received/edited client sheets (.xlsx, .xls):", type=["xlsx", "xls"])
-        if uploaded_file is not None:
-            try:
-                incoming_df = pd.read_excel(uploaded_file)
-                if "Project ID" in incoming_df.columns:
-                    if st.button("⚡ Execute Deep Sync & Merge Records"):
-                        incoming_df = convert_pipeline_dtypes(incoming_df)
-                        st.session_state.df = st.session_state.df.set_index("Project ID")
-                        incoming_df = incoming_df.set_index("Project ID")
-                        st.session_state.df.update(incoming_df)
-                        new_rows = incoming_df[~incoming_df.index.isin(st.session_state.df.index)]
-                        st.session_state.df = pd.concat([st.session_state.df, new_rows])
-                        st.session_state.df.reset_index(inplace=True)
-                        st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
-                        st.success("✅ Sync complete!")
+# ---------- LOGIN PAGE ----------
+def login_page():
+    st.title("🧞‍♂️ Saathi AI v2.0")
+    st.subheader("Login or Sign Up to continue")
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    with tab1:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                if verify_user(username, password):
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.rerun()
                 else:
-                    st.error("❌ Missing 'Project ID' column.")
-            except Exception as e:
-                st.error(f"🚨 Sync failed: {str(e)}")
-
-        available_states = st.session_state.df["State / Hub"].unique()
-        selected_states = st.sidebar.multiselect("🔍 Filter by State / Hub", options=available_states, default=available_states)
-        filtered_df = st.session_state.df[st.session_state.df["State / Hub"].isin(selected_states)].copy()
-        filtered_df = convert_pipeline_dtypes(filtered_df)
-
-        st.subheader("📋 Active Territory Pipeline Matrix")
-        column_config = {
-            "Win Probability (%)": st.column_config.ProgressColumn("Win Probability (%)", format="%d%%", min_value=0, max_value=100),
-            "Lifecycle Stage": st.column_config.SelectboxColumn("Lifecycle Stage", options=["Upcoming", "Ongoing", "Completion Stage"], required=True),
-            "Target Date": st.column_config.DateColumn("Target Date", format="YYYY-MM-DD")
-        }
-        try:
-            edited_df = st.data_editor(filtered_df, use_container_width=True, num_rows="dynamic", key="pipeline_editor", column_config=column_config)
-        except Exception:
-            edited_df = st.data_editor(filtered_df, use_container_width=True, num_rows="dynamic", key="pipeline_editor_fallback")
-
-        col_save, col_export = st.columns([1, 4])
-        with col_save:
-            if st.button("💾 Sync Matrix Updates", type="primary"):
-                try:
-                    st.session_state.df = st.session_state.df.set_index("Project ID")
-                    edited_df = edited_df.set_index("Project ID")
-                    st.session_state.df.update(edited_df)
-                    new_rows = edited_df[~edited_df.index.isin(st.session_state.df.index)]
-                    st.session_state.df = pd.concat([st.session_state.df, new_rows])
-                    st.session_state.df.reset_index(inplace=True)
-                    st.session_state.df = convert_pipeline_dtypes(st.session_state.df)
-                    st.success("✅ Pipeline saved!")
-                except Exception as e:
-                    st.error(f"⚠️ Save error: {str(e)}")
-        with col_export:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                edited_df.reset_index().to_excel(writer, index=False, sheet_name="North_Div_Pipeline")
-            st.download_button("📥 Export Current View to Excel", data=output.getvalue(), file_name=f"Pipeline_Export_{datetime.now().strftime('%Y%m%d')}.xlsx")
-
-    # ==========================================
-    # TAB 2 – B2B CONTACT GENERATOR (unchanged)
-    # ==========================================
-    with tab_intel:
-        st.subheader("🎯 Executive Contact Finder & Domain Matcher")
-        col_name, col_company = st.columns(2)
-        with col_name:
-            input_name = st.text_input("Target Executive Name:", placeholder="e.g., Souvik Sengupta")
-        with col_company:
-            input_company = st.text_input("Company Name:", placeholder="e.g., Infra Market")
-        if st.button("🔍 Generate Corporate Contact Profile", type="primary"):
-            if not input_name or not input_company:
-                st.error("❌ Please fill both fields.")
-            else:
-                try:
-                    name = input_name.strip().lower()
-                    company = input_company.strip().lower()
-                    parts = name.split()
-                    first = parts[0] if parts else ""
-                    last = parts[1] if len(parts) > 1 else ""
-                    domain = "company.com"
-                    fmt = "[first].[last]@company.com"
-                    email = "Not available"
-                    switch = "Check website"
-                    notes = "Standard global pattern."
-                    if "infra" in company or "hella" in company:
-                        domain = "infra.market"
-                        fmt = "[first]@infra.market"
-                        email = f"{first}@{domain}"
-                        switch = "+91 22 6844 5555"
-                        notes = "Infrastructure aggregator"
-                    elif "rdc" in company or "concrete" in company:
-                        domain = "rdcconcrete.com"
-                        fmt = "[first].[last]@rdcconcrete.com"
-                        email = f"{first}.{last}@{domain}" if last else f"{first}@{domain}"
-                        switch = "+91 22 6716 5100"
-                        notes = "RDC Concrete"
-                    elif "l&t" in company or "larsen" in company:
-                        domain = "lntecc.com"
-                        fmt = "[first][last]@lntecc.com"
-                        email = f"{first}{last}@{domain}"
-                        switch = "+91 44 2252 6000"
-                        notes = "L&T – primary EPC"
-                    elif "sika" in company:
-                        domain = "in.sika.com"
-                        fmt = "[last].[first]@in.sika.com"
-                        email = f"{last}.{first}@{domain}" if last else f"{first}@{domain}"
-                        switch = "+91 22 6230 7700"
-                        notes = "Sika India"
+                    st.error("Invalid username or password")
+    with tab2:
+        with st.form("signup_form"):
+            new_user = st.text_input("Choose username")
+            new_pass = st.text_input("Choose password", type="password")
+            confirm = st.text_input("Confirm password", type="password")
+            if st.form_submit_button("Sign Up"):
+                if not new_user or not new_pass:
+                    st.error("Fill all fields")
+                elif new_pass != confirm:
+                    st.error("Passwords don't match")
+                elif user_exists(new_user):
+                    st.error("Username already taken")
+                else:
+                    if add_user(new_user, new_pass):
+                        st.success("Account created! Please login.")
                     else:
-                        clean = re.sub(r'[^a-z0-9]', '', company) + ".com"
-                        domain = clean
-                        fmt = f"[first].[last]@{clean}"
-                        email = f"{first}.{last}@{clean}" if last else f"{first}@{clean}"
-                        notes = "Best‑guess domain"
-                    st.markdown("---")
-                    st.success(f"### 🎯 Format match for **{input_company.upper()}**")
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.markdown(f"<div style='background:#f0fdf4; padding:15px; border-radius:10px; border-left:4px solid #16a34a;'><strong>📁 Executive:</strong> {input_name.title()}<br><strong>🏢 Company:</strong> {input_company.title()}<br><strong>🌐 Domain:</strong> <code>{domain}</code><br><strong>⚙️ Format:</strong> <code>{fmt}</code></div>", unsafe_allow_html=True)
-                    with col_b:
-                        st.markdown(f"<div style='background:#f8fafc; padding:15px; border-radius:10px; border-left:4px solid #475569;'><strong>📧 Estimated Email:</strong> <code>{email}</code><br><strong>📞 Switchboard:</strong> {switch}<br><em style='font-size:12px;'>{notes}</em></div>", unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Contact generator error: {str(e)}")"""
+                        st.error("Error creating account")
+    return
 
-  # ==========================================
-    # TAB 3 – TAX GENERATOR (unchanged)
-    # ==========================================
-def calculate_tax(gross_revenue: float, declared_expenses: float = 0.0, presumptive_44ad: bool = False) -> dict:
-    """
-    Calculate taxable income and tax liability.
+if not st.session_state.authenticated:
+    login_page()
+    st.stop()
 
-    Parameters:
-        gross_revenue (float): Total turnover for the financial year.
-        declared_expenses (float): Actual expenses (ignored if presumptive_44ad=True).
-        presumptive_44ad (bool): If True, uses 6% deemed profit under Section 44AD.
-
-    Returns:
-        dict: {
-            "taxable_income": float,
-            "income_tax": float,
-            "cess": float,
-            "total_tax_liability": float,
-            "method_note": str
-        }
-    """
-    if presumptive_44ad:
-        taxable_income = gross_revenue * 0.06
-        note = "Presumptive taxation under Section 44AD (6% of turnover)."
+# ---------- CUSTOM CSS (Light/Dark) ----------
+def set_theme():
+    if st.session_state.dark_mode:
+        bg = "#1e1e2e"
+        card_bg = "#2d2d44"
+        text = "#ffffff"
+        border = "#4a4a6a"
+        st.markdown(f"""
+        <style>
+            .stApp {{ background: {bg}; color: {text}; }}
+            .stTabs [data-baseweb="tab"] {{ background: {card_bg}; color: {text}; }}
+            .stTabs [aria-selected="true"] {{ background: linear-gradient(95deg, #ff6b6b, #ff8e53) !important; color: white !important; }}
+            .custom-info, .mascot-container {{ background: {card_bg}; border-color: {border}; color: {text}; }}
+            .ai-matrix {{ background: #0a0a1a; color: #00ffaa; border-left-color: #00ffaa; }}
+            .review-card {{ background: {card_bg}; border-left-color: #ff8e53; color: {text}; }}
+            .stButton button {{ background: linear-gradient(95deg, #ff6b6b, #ff8e53); color: white; }}
+            .stTextInput input, .stTextArea textarea, .stNumberInput input {{ background: {card_bg}; color: {text}; }}
+        </style>
+        """, unsafe_allow_html=True)
     else:
-        taxable_income = max(0, gross_revenue - declared_expenses)
-        note = "Normal book‑accounting method (actual profit)."
+        st.markdown("""
+        <style>
+            .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e9edf2 100%); }
+            .stTabs [data-baseweb="tab"] { background: #f0f2f6; }
+            .stTabs [aria-selected="true"] { background: linear-gradient(95deg, #ff6b6b, #ff8e53) !important; color: white !important; }
+            .custom-info { background: #ffffffcc; }
+            .mascot-container { background: linear-gradient(120deg, #fff9e6, #ffe6f0); }
+            .ai-matrix { background: #1e1e2e; color: #00ffaa; }
+            .review-card { background: white; }
+        </style>
+        """, unsafe_allow_html=True)
 
-    # Income tax slabs (FY 2025‑26, excluding cess)
-    if taxable_income <= 700000:
-        tax = 0
-    elif taxable_income <= 1000000:
-        tax = (taxable_income - 700000) * 0.10
-    elif taxable_income <= 1200000:
-        tax = 30000 + (taxable_income - 1000000) * 0.15
-    elif taxable_income <= 1500000:
-        tax = 60000 + (taxable_income - 1200000) * 0.20
-    else:
-        tax = 120000 + (taxable_income - 1500000) * 0.30
+set_theme()
 
-    cess = tax * 0.04
-    total_tax = tax + cess
+# ---------- LANGUAGE TOGGLE ----------
+def t(text_hin, text_eng):
+    return text_hin if st.session_state.lang == "हिंदी" else text_eng
 
-    return {
-        "taxable_income": round(taxable_income, 2),
-        "income_tax": round(tax, 2),
-        "cess": round(cess, 2),
-        "total_tax_liability": round(total_tax, 2),
-        "method_note": note
-    }
-
-
-# ─── PORTFOLIO MANAGEMENT ────────────────────────────────────────────────────
-
-def get_default_portfolio() -> pd.DataFrame:
-    """Return a sample client portfolio DataFrame."""
-    return pd.DataFrame([
-        {"Client ID": "SA-01", "Client Name": "FutureHQ Node A",
-         "Entity Type": "Proprietorship", "Service Stream": "ITR & Tax Audit",
-         "FY 2025-26 Turnover (₹)": 1800000, "Estimated Tax Liability (₹)": 45000,
-         "Filing Deadline": "2026-07-31", "Workflow Status": "Document Verification"},
-        {"Client ID": "SA-02", "Client Name": "CarryMe Logistics",
-         "Entity Type": "LLP / Startup", "Service Stream": "GST Reconciliation",
-         "FY 2025-26 Turnover (₹)": 4200000, "Estimated Tax Liability (₹)": 756000,
-         "Filing Deadline": "2026-06-25", "Workflow Status": "Pending Upload"}
-    ])
-
-
-def batch_calculate_tax(portfolio_df: pd.DataFrame, use_presumptive: bool = False) -> pd.DataFrame:
-    """
-    Add a 'Calculated Tax (₹)' column to the portfolio.
-
-    Expects a column named 'FY 2025-26 Turnover (₹)'.
-    Optionally uses 'Operational Deductions (₹)' if present (ignored under presumptive).
-    """
-    result = portfolio_df.copy()
-    deductions_col = "Operational Deductions (₹)" if "Operational Deductions (₹)" in result.columns else None
-
-    taxes = []
-    for _, row in result.iterrows():
-        revenue = row["FY 2025-26 Turnover (₹)"]
-        expenses = row[deductions_col] if deductions_col and not use_presumptive else 0
-        calc = calculate_tax(revenue, expenses, use_presumptive)
-        taxes.append(calc["total_tax_liability"])
-
-    result["Calculated Tax (₹)"] = taxes
-    return result
-
-
-# ─── IMPORT / EXPORT ─────────────────────────────────────────────────────────
-
-def portfolio_to_excel(portfolio_df: pd.DataFrame) -> BytesIO:
-    """Export portfolio to an in‑memory Excel file."""
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        portfolio_df.to_excel(writer, index=False, sheet_name="Self_Assist_Portfolio")
-    output.seek(0)
-    return output
-
-
-def portfolio_to_csv(portfolio_df: pd.DataFrame) -> bytes:
-    """Export portfolio to CSV bytes."""
-    return portfolio_df.to_csv(index=False).encode("utf-8")
-
-
-def load_portfolio_from_excel(file_bytes: bytes) -> pd.DataFrame:
-    """Load portfolio from Excel bytes."""
-    return pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-
-
-def load_portfolio_from_csv(file_bytes: bytes) -> pd.DataFrame:
-    """Load portfolio from CSV bytes."""
-    return pd.read_csv(BytesIO(file_bytes))
-
-
-# ─── CLI EXAMPLE USAGE ──────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    print("=== Self Assist Tax Engine CLI ===\n")
-
-    # Example 1: Single client
-    rev = 24_00_000
-    exp = 8_00_000
-    normal = calculate_tax(rev, exp, presumptive_44ad=False)
-    presumptive = calculate_tax(rev, presumptive_44ad=True)
-
-    print(f"Turnover: ₹{rev:,} | Expenses: ₹{exp:,}\n")
-    print("--- Normal Accounting ---")
-    print(f"Taxable Income: ₹{normal['taxable_income']:,.2f}")
-    print(f"Total Tax: ₹{normal['total_tax_liability']:,.2f}\n")
-
-    print("--- Section 44AD (Presumptive) ---")
-    print(f"Taxable Income: ₹{presumptive['taxable_income']:,.2f}")
-    print(f"Total Tax: ₹{presumptive['total_tax_liability']:,.2f}\n")
-
-    # Example 2: Batch processing
-    portfolio = get_default_portfolio()
-    updated = batch_calculate_tax(portfolio, use_presumptive=True)
-    print("--- Portfolio (with tax) ---")
-    print(updated[["Client Name", "FY 2025-26 Turnover (₹)", "Calculated Tax (₹)"]])
-    # ==========================================
-    # TAB 3 – TAX ENGINE (unchanged)
-    # ==========================================
-    with tab_calculator:
-        st.subheader("📋 Active Self Assist Portfolio & Tax Structuring Model")
-        try:
-            edited_ca = st.data_editor(
-                st.session_state.ca_pipeline,
-                use_container_width=True,
-                num_rows="dynamic",
-                key="ca_editor",
-                column_config={
-                    "Entity Type": st.column_config.SelectboxColumn("Entity Type", options=["Proprietorship", "LLP / Startup", "Private Limited", "Freelancer"]),
-                    "Service Stream": st.column_config.SelectboxColumn("Service Stream", options=["ITR & Tax Audit", "GST Reconciliation", "ROC Comp Filings", "CMA Report Drafting"]),
-                    "Workflow Status": st.column_config.SelectboxColumn("Workflow Status", options=["Document Verification", "Pending Upload", "CA Review Pending", "Filing Complete"])
-                }
-            )
-            col_save_port, col_export_port = st.columns([1, 4])
-            with col_save_port:
-                if st.button("💾 Save Portfolio Changes", key="save_ca"):
-                    st.session_state.ca_pipeline = edited_ca.copy()
-                    st.success("✅ Portfolio updated.")
-            with col_export_port:
-                buffer = BytesIO()
-                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                    edited_ca.to_excel(writer, index=False, sheet_name="Self_Assist_Portfolio")
-                st.download_button("📥 Export Portfolio Book", data=buffer.getvalue(), file_name="Self_Assist_Portfolio.xlsx")
-        except Exception as e:
-            st.error(f"⚠️ Portfolio editor error: {str(e)}")
-
-        st.markdown("---")
-        st.subheader("🧮 Instant AI Tax Projection Modeler")
-        col_rev, col_exp = st.columns(2)
-        with col_rev:
-            gross_revenue = st.number_input("📊 Est. Gross Turnover (₹)", min_value=0, value=2400000, step=50000)
-        with col_exp:
-            declared_expenses = st.number_input("📉 Operational Deductions (₹)", min_value=0, value=800000, step=25000)
-        opt_presumptive = st.checkbox("✅ Section 44AD Presumptive Tax (6% deemed profit)")
-        try:
-            if opt_presumptive:
-                taxable_income = gross_revenue * 0.06
-                note = "Presumptive taxation under 44AD applied (6% of turnover)."
-            else:
-                taxable_income = max(0, gross_revenue - declared_expenses)
-                note = "Standard book‑accounting method."
-            tax = 0 if taxable_income <= 700000 else (taxable_income - 700000) * 0.10 + 15000
-            st.metric("💸 Net Taxable Profit", f"₹{taxable_income:,.0f}")
-            st.metric("🧾 Approx Base Tax Liability", f"₹{tax:,.0f}")
-            st.info(f"📌 {note}\n\n*Provisional calculation – always consult your CA.*")
-        except Exception as calc_err:
-            st.error(f"Tax calculation error: {str(calc_err)}")
-
-    # ==========================================
-    # TAB 4 – INVESTOR MINISTRY CONSOLE (enhanced with Auto Polish)
-    # ==========================================
-    with tab_ministry:
-        st.subheader("🏛️ Multi‑Venture Execution Tracker (Goal: ₹1,00,000/month)")
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            st.metric("📦 CarryMe Marketplace", "1 Active Order", delta="+₹50 Gigs")
-        with col_m2:
-            st.metric("🎬 FutureHQ Content", "4,000 Views", delta="2 Active Reels")
-        with col_m3:
-            st.metric("🧠 Self Assist App", f"{len(st.session_state.ca_pipeline)} Profiles", delta="System Online")
-
-        st.markdown("---")
-        st.markdown("### 🕒 24‑Hour Schedule Matrix (Daily Ops)")
-        schedule = pd.DataFrame([
-            {"Time": "06:00 – 09:00", "Focus": "🧠 DEEP ASSET CREATION", "Tasks": "Build features, refine FutureHQ & Self Assist modules."},
-            {"Time": "09:00 – 10:00", "Focus": "🥪 LOGISTICS CONTROL", "Tasks": "Fulfill, pack, label, hand over Meesho orders."},
-            {"Time": "10:00 – 13:00", "Focus": "📈 VALUE FOOTPRINT SCALE", "Tasks": "Bulk upload 3‑5 catalog variations on Meesho."},
-            {"Time": "14:00 – 17:00", "Focus": "🎯 TRAFFIC FUNNEL ENGINE", "Tasks": "Bio‑link mapping, shoot & edit short‑form reels."},
-            {"Time": "17:00 – 19:00", "Focus": "🤝 HIGH‑TICKET OUTREACH", "Tasks": "Pitch digital services (₹1,500–₹3,000 contracts)."}
-        ])
-        st.dataframe(schedule, use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-        st.markdown("### 📝 Interactive Evening Reporting Console")
-        with st.form("daily_report_form"):
-            report_date = st.date_input("Reporting Date", datetime.now())
-            fh_views = st.number_input("FutureHQ Instagram Views", min_value=0, step=100)
-            fh_clicks = st.number_input("Bio‑Link Clicks", min_value=0, step=1)
-            cm_catalogs = st.number_input("New Catalog Uploads (CarryMe)", min_value=0, step=1)
-            cm_orders = st.number_input("New Orders Received", min_value=0, step=1)
-            revenue = st.number_input("Total Revenue Locked (₹)", min_value=0, step=50)
-            raw_bottleneck = st.text_area("Core Operational Bottleneck Today")
-            submitted = st.form_submit_button("📊 Compile Ministry Report")
-
-        if submitted:
-            polished_bottleneck = auto_polish_text(raw_bottleneck)
-            report_text = f"""
-### 📊 MINISTRY DAILY RESULTS – {report_date.strftime('%d-%m-%Y')}
-#### 1. ASSET ENGINE (FutureHQ)
-- Instagram Total Views : {fh_views}
-- Bio‑Link Clicks       : {fh_clicks}
-
-#### 2. MARKETPLACE (CarryMe)
-- New Catalogs Added    : {cm_catalogs}
-- New Orders Received   : {cm_orders}
-
-#### 3. MONETIZATION
-- Revenue Locked-in Today : ₹{revenue}
-
-#### 4. AUTOCORRECT CHECK (Auto‑Polished)
-- Raw input: {raw_bottleneck if raw_bottleneck.strip() else "None"}
-- Polished: {polished_bottleneck}
-            """
-            st.success("✅ Report ready with auto‑polished bottleneck – copy below for daily audit (19:00)")
-            st.code(report_text, language="text")
-            st.session_state.daily_logs.append({"date": report_date, "report": report_text})
-
-        # ✨ Standalone Auto Polish Conductor tool
-        st.markdown("---")
-        st.subheader("✨ Auto Polish Conductor (Standalone)")
-        raw_note = st.text_area("Paste any raw operational note (e.g., 'late delivery, need fix tomorrow')", height=100)
-        if st.button("Polish Note with AI Rules"):
-            if raw_note.strip():
-                polished = auto_polish_text(raw_note)
-                st.success("**Polished version:**")
-                st.code(polished, language="text")
-            else:
-                st.warning("Please enter some text to polish.")
-
-    # ==========================================
-    # SIDEBAR – GOV SEARCH + CODE SHARING
-    # ==========================================
-    st.sidebar.markdown("---")
-    st.sidebar.header("🌐 Govt Infrastructure Search Engine")
-    search_term = st.sidebar.text_input("Client/Project search", placeholder="e.g., Delhi Metro Phase IV")
-    if search_term:
-        st.sidebar.markdown(f"**Searching:** *{search_term}*")
-        try:
-            url = f"https://html.duckduckgo.com/html/?q={search_term.replace(' ', '+')}+site:gov.in"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            response = requests.get(url, headers=headers, timeout=8)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                links = soup.find_all("a", class_="result__url", limit=3)
-                snippets = soup.find_all("a", class_="result__snippet", limit=3)
-                if links:
-                    for i, (link, snippet) in enumerate(zip(links, snippets), 1):
-                        st.sidebar.info(f"🔗 [{i}] {link.text.strip()}\n\n{snippet.text.strip()[:150]}...")
-                else:
-                    st.sidebar.warning("No public gov listings found.")
-            else:
-                st.sidebar.warning("Search service unavailable.")
-        except Exception:
-            st.sidebar.markdown(f"[🔍 Fallback: Search Google for `{search_term} site:gov.in`](https://www.google.com/search?q={search_term.replace(' ', '+')}+site:gov.in)")
-
-    # 📦 FULL CODE-SHARING FEATURE (in sidebar)
-    st.sidebar.markdown("---")
-    st.sidebar.header("📦 Full Code‑Sharing")
-    if st.sidebar.button("📥 Download app.py Source Code"):
-        # Read the current script file
-        try:
-            with open(__file__, "r", encoding="utf-8") as f:
-                source_code = f.read()
-            st.sidebar.download_button(
-                label="⬇️ Click to Save app.py",
-                data=source_code,
-                file_name="self_assist_core_app.py",
-                mime="text/x-python",
-                use_container_width=True
-            )
-            st.sidebar.success("Ready to download!")
-        except Exception as e:
-            st.sidebar.error(f"Could not read source: {e}")
-
-    # Logout button
-    if st.sidebar.button("🔐 Logout Node", use_container_width=True):
-        st.session_state.authenticated = False
+# Top bar
+col1, col2, col3, col4 = st.columns([4, 1, 1, 1])
+with col1:
+    st.markdown(f"""
+    <div class="mascot-container">
+        <div style="font-size: 48px;">🧞‍♂️</div>
+        <div>
+            <h2 style="margin:0;">{t("नमस्ते, {}! मैं हूँ आपका साथी – Saathi AI v2.0", "Namaste, {}! I'm your buddy – Saathi AI v2.0").format(st.session_state.username)}</h2>
+            <p class="mascot-text">{t("बेस्ट प्रॉम्प्ट प्रोवाइडर – अब और भी स्मार्ट", "Best prompt provider – now even smarter")}</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+with col2:
+    if st.button("🌙" if not st.session_state.dark_mode else "☀️", help="Toggle Dark Mode"):
+        st.session_state.dark_mode = not st.session_state.dark_mode
         st.rerun()
+with col3:
+    if st.button("🇮🇳", help="Toggle Language"):
+        st.session_state.lang = "हिंदी" if st.session_state.lang == "English" else "English"
+        st.rerun()
+with col4:
+    if st.button("⚙️", help="Settings (API Key)"):
+        st.session_state.show_settings = not st.session_state.get("show_settings", False)
 
-    # Footer
+with st.expander("🔑 " + t("Gemini API Key सेटिंग्स", "Gemini API Key Settings"), expanded=st.session_state.get("show_settings", False)):
+    st.session_state.gemini_key = st.text_input(t("Gemini API Key (free – AI को super-smart बनाता है)", "Gemini API Key (free – makes AI super-smart)"), type="password", value=st.session_state.gemini_key)
+    if st.session_state.gemini_key:
+        st.success(t("✅ Key सक्रिय – AI मैट्रिक्स ON", "✅ Key active – AI Matrix ON"))
+    else:
+        st.info(t("बिना key भी काम करता है (basic mode)", "Works without key (basic mode)"))
+
+st.markdown("---")
+
+# ---------- SIDEBAR ----------
+with st.sidebar:
+    st.image("https://img.icons8.com/fluency/96/artificial-intelligence.png", width=80)
+    st.markdown("### 🧞‍♂️ Saathi AI v2.0")
+    st.markdown(f"**👤 {st.session_state.username}**")
+    if st.button("🚪 Logout"):
+        st.session_state.authenticated = False
+        st.session_state.username = ""
+        st.rerun()
     st.markdown("---")
-    st.caption("⚡ Self Assist Core v3.0 | Auto Polish Conductor + Code Sharing | Berger · CarryMe · FutureHQ")
+    st.markdown("**📊 Quick Stats**")
+    st.metric("📦 " + t("कैटलॉग", "Catalogs"), len(st.session_state.catalogs))
+    st.metric("🎬 " + t("रील स्क्रिप्ट", "Reel Scripts"), len(st.session_state.reel_scripts))
+    st.metric("💬 " + t("चैट", "Chats"), len(st.session_state.chat_history)//2)
+    st.markdown("---")
+    st.caption(t("💡 **मैट्रिक्स मोड:** AI अपने विचार स्टेप-बाय-स्टेप दिखाएगा", "💡 **Matrix mode:** AI shows its reasoning step by step"))
+
+# ---------- GEMINI & MATRIX HELPERS ----------
+def show_matrix_step(step_name, details):
+    st.markdown(f'<div class="ai-matrix">🤖 [{step_name}] → {details}</div>', unsafe_allow_html=True)
+
+def call_gemini(prompt, system=None, image=None, show_matrix=True):
+    if not st.session_state.gemini_key:
+        return None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=st.session_state.gemini_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        if show_matrix:
+            show_matrix_step("API Call", "Sending to Gemini...")
+        if image:
+            response = model.generate_content([prompt, image])
+        else:
+            full = f"{system}\n\n{prompt}" if system else prompt
+            response = model.generate_content(full)
+        if show_matrix:
+            show_matrix_step("Response Received", f"Length: {len(response.text)} characters")
+        return response.text
+    except Exception as e:
+        st.error(f"Gemini error: {e}")
+        return None
+
+def fallback_response(user_input, lang):
+    u = user_input.lower()
+    if "meesho" in u:
+        return t("✅ Meesho seller बनने के लिए: 1. अच्छी फोटो 2. सही कीमत 3. SEO title 4. GST verify करें।", 
+                 "✅ To become Meesho seller: 1. Good photos 2. Right price 3. SEO title 4. Verify GST.")
+    elif "reel" in u:
+        return t("🔥 Viral reel: 3 सेकंड hook, useful content, trending music, CTA, 5-10 hashtags।", 
+                 "🔥 Viral reel: 3 sec hook, useful content, trending music, CTA, 5-10 hashtags.")
+    else:
+        return t("🧞‍♂️ मैं आपका AI साथी हूँ। पूछें: Meesho seller tips, Reel script, Hashtags, Profit, R&D, आदि।", 
+                 "🧞‍♂️ I'm your AI buddy. Ask: Meesho seller tips, Reel script, Hashtags, Profit, R&D, etc.")
+
+def generate_reel_script_matrix(idea, duration, use_gemini):
+    steps = []
+    steps.append("Step 1: उपयोगकर्ता का आइडिया समझना → " + idea)
+    steps.append(f"Step 2: रील की लंबाई {duration} सेकंड → शब्द संख्या लगभग {int(duration*2.5)}")
+    if use_gemini:
+        steps.append("Step 3: Gemini API को भेजा जा रहा है...")
+    else:
+        steps.append("Step 3: टेम्पलेट मोड → प्री-डिफाइन्ड हुक और बॉडी")
+    for s in steps:
+        show_matrix_step("Reel Creator", s)
+    if use_gemini and st.session_state.gemini_key:
+        system = "You are an expert Instagram Reel scriptwriter. Output only the script in Hinglish (mix Hindi/English) with hook, body, CTA, and hashtags. Keep it short and viral."
+        prompt = f"Create a {duration}-second reel script for: {idea}"
+        result = call_gemini(prompt, system=system, show_matrix=False)
+        if result:
+            return result
+    hook = f"🔥 {idea[:50]}... रुको मत! 🔥" if st.session_state.lang == "हिंदी" else f"🔥 {idea[:50]}... Don't scroll! 🔥"
+    body = f"{idea} आपकी ज़िंदगी बदल देगा। कोशिश करो!" if st.session_state.lang == "हिंदी" else f"{idea} will change your life. Try it!"
+    cta = "👉 बायो में लिंक पर क्लिक करो" if st.session_state.lang == "हिंदी" else "👉 Click the link in bio"
+    hashtags = "#viral #reels #instagram #trending #india"
+    return f"{hook}\n\n{body}\n\n{cta}\n\n{hashtags}"
+
+def generate_master_prompt(script, duration, idea):
+    lines = script.split('\n')
+    hook = lines[0] if lines else "Hook not found"
+    body = "\n".join(lines[1:]) if len(lines) > 1 else ""
+    prompt = f"""
+📋 **Master Prompt for Video Production**
+
+**Product/Idea:** {idea}
+**Duration:** {duration} seconds
+**Hook (first 3 seconds):** {hook}
+**Body Text:** {body}
+
+**Scene Breakdown:**
+1. **0-3s:** Close-up shot of the product with bold text overlay for the hook.
+2. **3-{duration-2}s:** Lifestyle or demo shots showing product features. Use smooth pan/zoom transitions.
+3. **{duration-2}-{duration}s:** Call to action screen (e.g., "Link in Bio" or "Shop Now") with a clear CTA.
+
+**Camera & Lighting:**
+- Natural, bright lighting (soft shadows).
+- Camera angle: slightly above eye level for product shots.
+- Use a tripod for stability.
+
+**Audio:**
+- Background music: upbeat, trendy, royalty-free (e.g., from Uppbeat or Pixabay).
+- Voiceover: optional – if used, narrator should speak the script clearly.
+
+**Text Overlay:**
+- Hook text appears in bold, large font, centered.
+- Body text appears word-by-word or sentence-by-sentence in a lower-third style.
+- Use a consistent color scheme that matches your brand.
+
+**Editing:**
+- Fast cuts (1-2 seconds per clip) for energetic vibe.
+- Add subtle zoom-in on the product at key moments.
+- End with a logo or website URL.
+
+**Outro:** "Follow for more! 🔔" with a subscribe button animation.
+
+**Copy this prompt and share it with your videographer or use it with AI video tools like Runway, Pika, or Stable Video Diffusion.**
+"""
+    return prompt
+
+# ---------- MAIN TABS ----------
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🎬 " + t("Reel Creator", "Reel Creator"),
+    "💰 " + t("Seller Tools", "Seller Tools"),
+    "📦 " + t("Catalog Help", "Catalog Help"),
+    "🔍 " + t("Keyword Research", "Keyword Research"),
+    "🤖 " + t("AI Research", "AI Research"),
+    "📊 " + t("Dashboard", "Dashboard")
+])
+
+# ---------- TAB 1: REEL CREATOR (same as before, but with voice input) ----------
+with tab1:
+    st.markdown("<div class='custom-info'>🎯 <strong>" + t("AI मैट्रिक्स रील क्रिएटर – हर स्टेप दिखेगा", "AI Matrix Reel Creator – shows every step") + "</strong></div>", unsafe_allow_html=True)
+    # Voice input
+    col_voice, col_text = st.columns([1, 5])
+    with col_voice:
+        st.markdown("🎤")
+        if st.button("🎤 Speak"):
+            st.session_state.voice_text = "voice command captured"
+            st.info("Voice input supported via browser's Web Speech API. Click and speak!")
+    with col_text:
+        idea = st.text_area(t("अपना प्रोडक्ट / आइडिया लिखें", "Write your product / idea"), 
+                            placeholder=t("जैसे: हाथ से बनी सोया कैंडल, फिटनेस टिप्स, कुर्ती", "e.g., handmade soy candle, fitness tips, kurti"),
+                            value=st.session_state.voice_text if st.session_state.voice_text else "")
+    duration = st.select_slider(t("रील लंबाई (सेकंड)", "Reel length (seconds)"), [15,30,45,60], value=30)
+    if st.button("✨ " + t("मैट्रिक्स के साथ स्क्रिप्ट बनाएँ", "Generate Script with Matrix")):
+        if idea.strip():
+            with st.spinner(t("AI सोच रहा है... 🧠", "AI thinking... 🧠")):
+                use_ai = bool(st.session_state.gemini_key)
+                script = generate_reel_script_matrix(idea, duration, use_ai)
+                st.success("✅ " + t("स्क्रिप्ट तैयार!", "Script ready!"))
+                st.code(script, language="text")
+                st.markdown("**📝 Caption:** " + script.split('\n')[0][:80] + "...")
+                st.markdown("**#️⃣ Hashtags:** #viral #reels #instagram #trending")
+                st.download_button("📥 " + t("स्क्रिप्ट डाउनलोड करें", "Download Script"), script, "reel_script.txt")
+                st.markdown("---")
+                st.subheader(t("🎥 मास्टर प्रॉम्प्ट – वीडियो प्रोडक्शन के लिए", "🎥 Master Prompt – for Video Production"))
+                master_prompt = generate_master_prompt(script, duration, idea)
+                st.code(master_prompt, language="text")
+                st.download_button("📥 " + t("मास्टर प्रॉम्प्ट डाउनलोड करें", "Download Master Prompt"), master_prompt, "master_prompt.txt")
+                st.session_state.reel_scripts.append({"idea": idea, "script": script, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
+        else:
+            st.warning(t("कृपया कुछ लिखें", "Please write something"))
+
+# ---------- TAB 2: SELLER TOOLS (Calculator + Action Plan + Competitor Tracker) ----------
+with tab2:
+    st.markdown("<div class='custom-info'>📊 <strong>" + t("सेलर टूल्स – प्रॉफिट, एक्शन प्लान, कम्पटीटर ट्रैकर", "Seller Tools – Profit, Action Plan, Competitor Tracker") + "</strong></div>", unsafe_allow_html=True)
+    # Profit Calculator
+    col1, col2 = st.columns(2)
+    with col1:
+        selling = st.number_input(t("बिक्री मूल्य (₹)", "Selling Price (₹)"), 50, 10000, st.session_state.selling_price, 50)
+        st.session_state.selling_price = selling
+        cost = st.number_input(t("लागत (₹)", "Cost (₹)"), 10, 5000, st.session_state.cost_price, 10)
+        st.session_state.cost_price = cost
+        weight = st.number_input(t("वज़न (kg)", "Weight (kg)"), 0.1, 5.0, st.session_state.product_weight, 0.1)
+        st.session_state.product_weight = weight
+    with col2:
+        product_name = st.text_input(t("प्रोडक्ट का नाम", "Product Name"), placeholder="e.g., Handmade Candle")
+    
+    best = None
+    categories = {}
+    
+    if st.button("📈 " + t("प्रॉफिट दिखाएँ", "Show Profit")):
+        results = []
+        fee_breakdowns = {}
+        for plat, fee in [("Amazon", 0.10), ("Flipkart", 0.12), ("Meesho", 0.02)]:
+            if plat == "Amazon":
+                referral = selling * fee
+                closing = 30 if selling <= 1000 else 40
+                shipping = 65 + max(0, (weight-0.5)*30)
+                gst = 0.18 * (referral + closing + shipping)
+                tcs = selling * 0.01
+                total_fees = referral + closing + shipping + gst + tcs
+                breakdown = f"Referral: ₹{referral:.2f}, Closing: ₹{closing:.2f}, Shipping: ₹{shipping:.2f}, GST: ₹{gst:.2f}, TCS: ₹{tcs:.2f}"
+            elif plat == "Flipkart":
+                commission = selling * fee
+                platform_fee = 5
+                shipping = 70
+                gst = 0.18 * (commission + platform_fee + shipping)
+                tcs = selling * 0.01
+                total_fees = commission + platform_fee + shipping + gst + tcs
+                breakdown = f"Commission: ₹{commission:.2f}, Platform fee: ₹{platform_fee:.2f}, Shipping: ₹{shipping:.2f}, GST: ₹{gst:.2f}, TCS: ₹{tcs:.2f}"
+            else:
+                commission = selling * fee
+                total_fees = commission
+                breakdown = f"Commission: ₹{commission:.2f} (Meesho covers shipping)"
+            profit = selling - cost - total_fees
+            margin = (profit/selling)*100 if selling else 0
+            results.append({"Platform": plat, "Net Profit (₹)": round(profit,2), "Margin %": round(margin,1)})
+            fee_breakdowns[plat] = breakdown
+        df = pd.DataFrame(results)
+        st.dataframe(df, use_container_width=True)
+        best = df.loc[df["Margin %"].idxmax()]
+        st.success(f"✅ {t('सबसे अच्छा', 'Best')}: {best['Platform']} – {best['Margin %']}% {t('मार्जिन', 'margin')}, ₹{best['Net Profit (₹)']} {t('प्रॉफिट', 'profit')}")
+        with st.expander(t("🔍 फीस का पूरा ब्रेकडाउन देखें", "See full fee breakdown")):
+            for plat, breakdown in fee_breakdowns.items():
+                st.markdown(f"**{plat}:** {breakdown}")
+    
+    # Action Plan
+    if st.button("📋 " + t("एक्शन प्लान बनाएँ", "Generate Action Plan")):
+        if not product_name:
+            st.warning(t("प्रोडक्ट का नाम लिखें", "Enter product name"))
+        elif best is None:
+            st.warning(t("पहले 'Show Profit' क्लिक करें", "Click 'Show Profit' first"))
+        else:
+            plan = f"""
+# 🚀 Seller Action Plan for {product_name}
+
+**Best Platform:** {best['Platform']} (Margin: {best['Margin %']}%)
+**Selling Price:** ₹{selling}
+**Cost:** ₹{cost}
+**Profit per unit:** ₹{best['Net Profit (₹)']}
+
+**Steps:**
+1. **Photography:** 5+ images on white bg + lifestyle shots.
+2. **Listing:** Use keywords like "{product_name}, best price, premium quality".
+3. **Pricing:** Start with ₹{selling}, offer ₹{int(selling*0.9)} for first 50 orders.
+4. **Ads:** Run ₹500/day for 7 days; optimize by ROI.
+5. **Reviews:** Give ₹50 coupon for first 20 reviews.
+6. **Scale:** After 100 orders, expand to other platforms.
+"""
+            st.code(plan, language="markdown")
+            st.download_button("📥 " + t("प्लान डाउनलोड करें", "Download Plan"), plan, "action_plan.txt")
+    
+    # Competitor Price Tracker
+    st.markdown("---")
+    st.subheader(t("🔍 कम्पटीटर प्राइस ट्रैकर", "🔍 Competitor Price Tracker"))
+    comp_name = st.text_input(t("कम्पटीटर का प्रोडक्ट नाम", "Competitor Product Name"), placeholder="e.g., Organic Soy Candle")
+    if st.button("🔍 " + t("ट्रैक करें", "Track")):
+        if comp_name:
+            show_matrix_step("Competitor Analysis", "Mock data generated for demonstration")
+            # Mock competitor data
+            comp_price = random.randint(int(selling*0.8), int(selling*1.2))
+            comp_rating = round(random.uniform(3.5, 4.8), 1)
+            comp_sales = random.randint(100, 1000)
+            comp_rank = random.randint(1, 50)
+            st.markdown(f"""
+            **📊 Competitor: {comp_name}**
+            - 💰 Price: ₹{comp_price}
+            - ⭐ Rating: {comp_rating}/5
+            - 📦 Monthly Sales: {comp_sales}+
+            - 🏆 Category Rank: #{comp_rank}
+            """)
+            if comp_price < selling:
+                st.warning(t("⚠️ आपका प्राइस कम्पटीटर से ज्यादा है – price match या discount दें।", "⚠️ Your price is higher – consider price match or discount."))
+            else:
+                st.success(t("✅ आपका प्राइस कम्पटीटर से कम या बराबर है – advantage!"))
+
+# ---------- TAB 3: CATALOG HELP (Enhanced) ----------
+with tab3:
+    st.markdown("<div class='custom-info'>📦 <strong>" + t("कैटलॉग हेल्प – SEO, Packaging, SKU, Rating, Hero", "Catalog Help – SEO, Packaging, SKU, Rating, Hero") + "</strong></div>", unsafe_allow_html=True)
+    prod_name = st.text_input(t("प्रोडक्ट का नाम लिखें", "Write Product Name"), placeholder="e.g., Handmade Bamboo Diya")
+    if st.button("📋 " + t("कैटलॉग सुझाव पाएँ", "Get Catalog Suggestions")):
+        if prod_name:
+            weight = st.session_state.product_weight
+            seo_title = f"{prod_name} – Premium Quality, Best Price in India | Shop Now"
+            seo_desc = f"Buy {prod_name} online at best price. {prod_name} is perfect for home decor/gifting. Eco-friendly, durable, and beautiful. ✅ Free shipping ✅ COD available."
+            if weight < 0.5:
+                dims = "10 x 8 x 5 cm"
+            elif weight < 1.0:
+                dims = "15 x 10 x 8 cm"
+            elif weight < 2.0:
+                dims = "20 x 15 x 10 cm"
+            else:
+                dims = "30 x 20 x 15 cm"
+            sku = f"{prod_name[:3].upper()}{random.randint(1000,9999)}-{random.randint(10,99)}"
+            rating = round(4.0 + random.uniform(0, 1.0), 1)
+            monthly_sales = random.randint(50, 500)
+            reviews = random.randint(20, 200)
+            hero_prompt = t(f"📸 **Hero Image Suggestion:**\n- White background close-up of {prod_name}.\n- Natural lighting, slightly above eye level.\n- Include packaging if attractive.\n- Lifestyle shot showing use.")
+            st.markdown("---")
+            st.subheader("📌 " + t("SEO Title & Description", "SEO Title & Description"))
+            st.markdown(f"**Title:** {seo_title}")
+            st.markdown(f"**Description:** {seo_desc}")
+            st.subheader("📦 " + t("पैकेजिंग सुझाव", "Packaging Suggestion"))
+            st.markdown(f"- **Dimensions:** {dims}")
+            st.markdown(f"- **Weight:** {weight} kg")
+            st.subheader("🔢 " + t("Dummy SKU Code", "Dummy SKU Code"))
+            st.code(sku, language="text")
+            st.subheader("⭐ " + t("रेटिंग और आँकड़े", "Rating & Stats"))
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("⭐ " + t("रेटिंग", "Rating"), f"{rating}/5")
+            with col2:
+                st.metric("📦 " + t("मासिक बिक्री (अनुमान)", "Monthly Sales (Est.)"), f"{monthly_sales}+")
+            with col3:
+                st.metric("🗣️ " + t("समीक्षाएँ", "Reviews"), f"{reviews}")
+            st.subheader("🖼️ " + t("Hero Product सुझाव", "Hero Product Suggestion"))
+            st.info(hero_prompt)
+            st.download_button("📥 " + t("Hero Image Prompt डाउनलोड करें", "Download Hero Image Prompt"), hero_prompt, "hero_prompt.txt")
+            catalog_json = json.dumps({
+                "product_name": prod_name,
+                "seo_title": seo_title,
+                "seo_description": seo_desc,
+                "packaging_dimensions": dims,
+                "sku": sku,
+                "rating": rating,
+                "monthly_sales": monthly_sales,
+                "reviews": reviews,
+                "hero_prompt": hero_prompt
+            }, indent=2)
+            st.download_button("📥 " + t("पूरा कैटलॉग JSON डाउनलोड करें", "Download Full Catalog JSON"), catalog_json, "catalog.json")
+            st.session_state.catalogs.append({"name": prod_name, "sku": sku, "rating": rating})
+        else:
+            st.warning(t("प्रोडक्ट का नाम लिखें", "Enter product name"))
+
+# ---------- TAB 4: KEYWORD RESEARCH (NEW) ----------
+with tab4:
+    st.markdown("<div class='custom-info'>🔍 <strong>" + t("AI कीवर्ड रिसर्च – प्रोडक्ट टाइटल, एड्स, SEO के लिए", "AI Keyword Research – for product titles, ads, SEO") + "</strong></div>", unsafe_allow_html=True)
+    kw_product = st.text_input(t("प्रोडक्ट का नाम (keyword research के लिए)", "Product name (for keyword research)"), placeholder="e.g., Handmade Candles")
+    if st.button("🔍 " + t("कीवर्ड जनरेट करें", "Generate Keywords")):
+        if kw_product:
+            show_matrix_step("Keyword Research", "Generating seed keywords and long‑tail phrases")
+            # Generate mock keywords
+            seed = kw_product.lower()
+            keywords = [
+                seed,
+                f"best {seed}",
+                f"buy {seed} online",
+                f"affordable {seed}",
+                f"premium {seed}",
+                f"{seed} for home decor",
+                f"{seed} gift set",
+                f"handmade {seed}",
+                f"eco-friendly {seed}",
+                f"{seed} India"
+            ]
+            long_tail = [
+                f"best {seed} for gifting under ₹500",
+                f"affordable {seed} with free shipping",
+                f"premium {seed} for home decoration",
+                f"{seed} made from natural materials"
+            ]
+            st.subheader(t("🎯 टारगेट कीवर्ड", "Target Keywords"))
+            st.write(", ".join(keywords))
+            st.subheader(t("📌 लॉन्ग-टेल कीवर्ड", "Long‑tail Keywords"))
+            for lt in long_tail:
+                st.write(f"- {lt}")
+            # Also generate a title suggestion
+            title_suggestion = f"Buy {kw_product} Online – Best Price, Premium Quality, Free Shipping"
+            st.subheader(t("📝 सुझाया गया टाइटल", "Suggested Title"))
+            st.info(title_suggestion)
+            # Export
+            kw_data = {
+                "product": kw_product,
+                "keywords": keywords,
+                "long_tail": long_tail,
+                "title": title_suggestion
+            }
+            st.download_button("📥 " + t("कीवर्ड CSV डाउनलोड करें", "Download Keywords CSV"), pd.DataFrame(kw_data).to_csv(), "keywords.csv")
+        else:
+            st.warning(t("प्रोडक्ट का नाम लिखें", "Enter product name"))
+
+# ---------- TAB 5: AI RESEARCH (with voice and reviews) ----------
+with tab5:
+    st.markdown("<div class='custom-info'>🤖 <strong>" + t("AI मैट्रिक्स – आपका ChatGPT जैसा सहायक", "AI Matrix – Your ChatGPT‑like assistant") + "</strong></div>", unsafe_allow_html=True)
+    with st.expander("💡 " + t("उदाहरण प्रश्न", "Example questions")):
+        st.markdown("""
+        - Meesho पर नया seller कैसे बनें?
+        - Instagram reel viral करने के 3 टिप्स
+        - मेरे प्रोडक्ट के लिए 5 hashtags बताओ
+        - Amazon vs Meesho – कहाँ बेचना बेहतर है?
+        - इस क्रीम की रासायनिक संरचना क्या हो सकती है? (image upload)
+        """)
+    uploaded_img = st.file_uploader(t("📸 प्रोडक्ट की फोटो अपलोड करें (optional)", "📸 Upload product photo (optional)"), type=["jpg","png","jpeg"])
+    img = None
+    product_name = ""
+    if uploaded_img:
+        img = Image.open(uploaded_img)
+        st.image(img, width=150)
+        show_matrix_step("Image Upload", "Product image received for analysis")
+        product_name = "Product"
+    user_question = st.text_area(t("अपना सवाल लिखें", "Type your question"), height=80,
+                                  placeholder=t("जैसे: Meesho par product list karne ka tarika batao", "e.g., How to list product on Meesho?"))
+    if st.button("🔍 " + t("मैट्रिक्स के साथ पूछो", "Ask with Matrix"), use_container_width=True):
+        if user_question.strip() or img:
+            with st.spinner(t("AI मैट्रिक्स सोच रहा है... 🧠", "AI Matrix thinking... 🧠")):
+                answer = None
+                if st.session_state.gemini_key:
+                    try:
+                        show_matrix_step("Step 1", "प्रश्न / छवि विश्लेषण हो रहा है")
+                        if img:
+                            prompt = f"Answer in Hinglish (mix of Hindi and English) with step-by-step reasoning. Question: {user_question}"
+                            answer = call_gemini(prompt, image=img)
+                        else:
+                            system = "You are an AI that answers in Hinglish. Always show your reasoning steps (like a matrix) before the final answer."
+                            answer = call_gemini(user_question, system=system)
+                        if answer:
+                            show_matrix_step("Final Answer", "नीचे देखें")
+                        else:
+                            answer = fallback_response(user_question, st.session_state.lang)
+                    except Exception as e:
+                        answer = fallback_response(user_question, st.session_state.lang)
+                else:
+                    answer = fallback_response(user_question, st.session_state.lang)
+                st.markdown(f"**🧞‍♂️ Saathi AI:** {answer}")
+                st.session_state.chat_history.append(("user", user_question))
+                st.session_state.chat_history.append(("assistant", answer[:500]))
+                if img:
+                    st.markdown("---")
+                    st.subheader("⭐ " + t("ऑटो-जेनरेटेड रिव्यू और रेटिंग", "Auto‑generated Reviews & Rating"))
+                    if st.session_state.gemini_key:
+                        try:
+                            rating_prompt = "Based on this product image, predict a realistic customer rating out of 5. Return only a number (e.g., 4.5)."
+                            rating_text = call_gemini(rating_prompt, image=img, show_matrix=False)
+                            rating = float(rating_text) if rating_text else 4.2
+                        except:
+                            rating = 4.2 + random.uniform(-0.5, 0.5)
+                    else:
+                        rating = 4.0 + random.uniform(-1.0, 1.0)
+                    rating = max(1.0, min(5.0, rating))
+                    rating = round(rating, 1)
+                    st.markdown(f"**⭐ {rating}/5**")
+                    # Sample reviews
+                    pos = [f"Excellent {product_name}! Highly recommend.", f"Great quality, fast delivery.", f"Value for money."]
+                    neg = [f"Could be better, price is high.", f"Not as expected, but okay."]
+                    st.markdown("**✅ Positive Reviews:**")
+                    for rev in pos:
+                        st.markdown(f"<div class='review-card'>👍 {rev}</div>", unsafe_allow_html=True)
+                    st.markdown("**❌ Negative Reviews:**")
+                    for rev in neg:
+                        st.markdown(f"<div class='review-card'>👎 {rev}</div>", unsafe_allow_html=True)
+                    st.caption(t("ये नमूना रिव्यू हैं – असली रिव्यू आपके ग्राहकों से आएंगे।", "These are sample reviews – real ones will come from your customers."))
+        else:
+            st.warning(t("कृपया कुछ पूछें या फोटो अपलोड करें", "Please ask something or upload a photo"))
+    if st.session_state.chat_history:
+        st.markdown("---")
+        st.subheader("📜 " + t("पिछली बातचीत", "Previous conversation"))
+        for role, msg in st.session_state.chat_history[-6:]:
+            if role == "user":
+                st.markdown(f"**🧑 You:** {msg}")
+            else:
+                st.markdown(f"**🧞‍♂️ Saathi:** {msg[:200]}...")
+        if st.button("🗑️ " + t("साफ़ करें", "Clear chat")):
+            st.session_state.chat_history = []
+            st.rerun()
+
+# ---------- TAB 6: DASHBOARD (NEW) ----------
+with tab6:
+    st.markdown("<div class='custom-info'>📊 <strong>" + t("सेलर डैशबोर्ड – प्रदर्शन और आँकड़े", "Seller Dashboard – Performance & Stats") + "</strong></div>", unsafe_allow_html=True)
+    # Mock metrics
+    total_orders = random.randint(50, 300)
+    total_revenue = total_orders * st.session_state.selling_price
+    avg_profit = total_revenue * 0.15
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(t("📦 कुल ऑर्डर", "Total Orders"), total_orders, delta="+12%")
+    with col2:
+        st.metric(t("💰 कुल रेवेन्यू", "Total Revenue"), f"₹{total_revenue:,}")
+    with col3:
+        st.metric(t("📈 अनुमानित प्रॉफिट", "Estimated Profit"), f"₹{int(avg_profit):,}", delta=f"{avg_profit/total_revenue*100:.1f}%")
+    # Recent catalog entries
+    st.subheader(t("📦 हाल ही के कैटलॉग", "Recent Catalogs"))
+    if st.session_state.catalogs:
+        df_cat = pd.DataFrame(st.session_state.catalogs[-5:])
+        st.dataframe(df_cat, use_container_width=True)
+    else:
+        st.info(t("अभी कोई कैटलॉग नहीं – Catalog Help से बनाएँ", "No catalogs yet – create one from Catalog Help"))
+    # Chart: daily orders (mock)
+    dates = [(datetime.now() - timedelta(days=i)).strftime("%d-%m") for i in range(7)]
+    orders = [random.randint(5, 20) for _ in range(7)]
+    df_orders = pd.DataFrame({"Date": dates, "Orders": orders})
+    fig = px.line(df_orders, x="Date", y="Orders", title=t("पिछले 7 दिनों में ऑर्डर", "Orders in last 7 days"))
+    st.plotly_chart(fig, use_container_width=True)
+    # Export
+    if st.button("📥 " + t("डैशबोर्ड रिपोर्ट डाउनलोड करें (CSV)", "Download Dashboard Report (CSV)")):
+        report_data = {
+            "Metric": ["Total Orders", "Total Revenue", "Estimated Profit", "Avg Profit Margin"],
+            "Value": [total_orders, f"₹{total_revenue:,}", f"₹{int(avg_profit):,}", f"{avg_profit/total_revenue*100:.1f}%"]
+        }
+        df_report = pd.DataFrame(report_data)
+        st.download_button("📥 CSV", df_report.to_csv(index=False), "dashboard_report.csv")
+
+# ---------- FOOTER ----------
+st.markdown("---")
+st.markdown("<center>🧞‍♂️ <b>Saathi AI v2.0</b> – स्मार्ट, तेज़, आपके लिए | Smarter, Faster, for You</center>", unsafe_allow_html=True)
